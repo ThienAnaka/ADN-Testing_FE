@@ -3,7 +3,7 @@
 import { useContext, useEffect, useState } from "react";
 import { AuthContext } from "../../context/AuthContext";
 import { useOrderContext } from "../../context/OrderContext";
-import serviceApi from "../../API/serviceApi";
+import serviceApi from "../../api/serviceApi";
 import userApi from "../../api/userApI";
 
 const RegistrationForm = () => {
