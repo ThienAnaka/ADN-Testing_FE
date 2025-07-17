@@ -1,439 +1,325 @@
-import { useState, useEffect } from "react";
+"use client";
+
+import { useState, useEffect, useContext } from "react";
 import {
   Card,
-  Table,
-  Tag,
-  Button,
-  Modal,
   Form,
   Input,
   Select,
-  message,
-  Space,
-  Upload,
-  Tabs,
+  DatePicker,
+  Button,
   Row,
   Col,
-  Statistic,
   Divider,
   Typography,
-  Tooltip,
+  Space,
+  Modal,
+  Table,
+  Tag,
+  message,
+  Upload,
+  Tabs,
 } from "antd";
 import {
-  EyeOutlined,
-  EditOutlined,
-  UploadOutlined,
-  DownloadOutlined,
-  PrinterOutlined,
-  FileTextOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  ExperimentOutlined,
+  PlusOutlined,
   DeleteOutlined,
-  UndoOutlined,
-  EyeInvisibleOutlined,
-  ExclamationCircleOutlined,
+  PrinterOutlined,
+  CameraOutlined,
+  SaveOutlined,
+  EyeOutlined,
+  CheckCircleOutlined,
 } from "@ant-design/icons";
-import { useOrderContext } from "../../context/OrderContext";
+import { useLocation } from "react-router-dom";
+import dayjs from "dayjs";
+import { AuthContext } from "../../context/AuthContext";
 
-const { TextArea } = Input;
-const { Option } = Select;
-const { TabPane } = Tabs;
 const { Title, Text, Paragraph } = Typography;
+const { Option } = Select;
+const { TextArea } = Input;
+const { TabPane } = Tabs;
 
-const TestingResults = () => {
-  const { orders, updateOrder } = useOrderContext();
-  const [filteredOrders, setFilteredOrders] = useState([]);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [reportModalVisible, setReportModalVisible] = useState(false);
+const SampleCollection = ({ caseType }) => {
+  const location = useLocation();
   const [form] = Form.useForm();
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [tempFormData, setTempFormData] = useState({});
-  const [currentEditOrderId, setCurrentEditOrderId] = useState(null);
-  const [confirmHideOrder, setConfirmHideOrder] = useState(null);
-  const [tableData, setTableData] = useState([]);
-  const [reasonModalVisible, setReasonModalVisible] = useState(false);
-  const [reasonText, setReasonText] = useState("");
+  const [sampleForms, setSampleForms] = useState([]);
+  const [donors, setDonors] = useState([
+    {
+      id: 1,
+      name: "",
+      idType: "CCCD",
+      idNumber: "",
+      idIssueDate: null,
+      idIssuePlace: "",
+      nationality: "Việt Nam",
+      address: "",
+      sampleType: "Máu",
+      sampleQuantity: "01",
+      relationship: "",
+      healthIssues: "không",
+      fingerprint: null,
+    },
+  ]);
+  const { user } = useContext(AuthContext);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [showSuccessOverlay, setShowSuccessOverlay] = useState(false);
 
-  const STATUS_PROCESSING = "Đang xử lý";
-  const STATUS_WAITING_APPROVAL = "Chờ xác thực";
-  const STATUS_REJECTED = "Từ chối";
-  const STATUS_COMPLETED = "Hoàn thành";
+  const title =
+    caseType === "Dân sự"
+      ? "Lấy mẫu xét nghiệm dân sự"
+      : "Lấy mẫu xét nghiệm hành chính";
 
-  // Đưa getStatusText ra ngoài component để không bị thay đổi reference mỗi lần render
-  const getStatusText = (status) => {
-    const s = normalizeStatus(status);
-    if (["dangxuly", "processing"].includes(s)) return "Đang xử lý";
-    if (["choxacthuc", "waitingapproval"].includes(s)) return "Chờ xác thực";
-    if (["hoanthanh", "completed"].includes(s)) return "Hoàn thành";
-    if (["tuchoi", "rejected"].includes(s)) return "Từ chối";
-    return "Đang xử lý";
-  };
+  // Danh sách loại xét nghiệm hành chính
+  const adminTestTypes = [
+    "Xét nghiệm ADN hành chính - Khai sinh",
+    "Xét nghiệm ADN hành chính - Di trú",
+    "Xét nghiệm ADN hành chính - Thừa kế",
+    "Xét nghiệm ADN hành chính - Tranh chấp",
+    "Xét nghiệm ADN hành chính - Nhanh",
+  ];
 
   useEffect(() => {
-    setFilteredOrders(orders.filter((order) => !order.isHidden && [
-      'Đang xử lý', 'Hoàn thành', 'Chờ xác thực', 'Từ chối'
-    ].includes(getStatusText(order.status))));
-  }, [orders]);
-
-  // Lắng nghe sự kiện storage để tự động cập nhật khi manager thay đổi trạng thái
-  useEffect(() => {
-    const handleStorageChange = (event) => {
-      if (event.key === "dna_orders") {
-        // Force re-render bằng cách trigger một state change
-        setFilteredOrders(prev => [...prev]);
+    try {
+      const stored = localStorage.getItem("sample_collection_forms");
+      const savedForms = stored ? JSON.parse(stored) : [];
+      if (Array.isArray(savedForms)) {
+        setSampleForms(savedForms);
+      } else {
+        setSampleForms([]);
       }
-    };
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+    } catch {
+      // Nếu dữ liệu bị lỗi, reset về mảng rỗng để tránh crash
+      setSampleForms([]);
+      localStorage.removeItem("sample_collection_forms");
+    }
   }, []);
 
   useEffect(() => {
-    if (filterStatus === "all") {
-      setFilteredOrders(orders.filter((order) => !order.isHidden && [
-        'Đang xử lý', 'Hoàn thành', 'Chờ xác thực', 'Từ chối'
-      ].includes(getStatusText(order.status))));
-    } else {
-      setFilteredOrders(
-        orders.filter(
-          (order) => !order.isHidden && [
-            'Đang xử lý', 'Hoàn thành', 'Chờ xác thực', 'Từ chối'
-          ].includes(getStatusText(order.status)) && getStatusText(order.status) === filterStatus
-        )
-      );
+    // Chỉ tự động điền orderId và requesterName nếu có, KHÔNG tự động điền collectionDate
+    const params = new URLSearchParams(location.search);
+    const orderId = params.get("orderId");
+    const requesterName = params.get("requesterName");
+    if (orderId) {
+      form.setFieldsValue({ orderId: orderId.toString() });
     }
-  }, [filterStatus, orders]);
+    if (requesterName) {
+      form.setFieldsValue({ requesterName });
+    }
+  }, [location.search, form]);
 
   useEffect(() => {
-    if (editModalVisible) {
-      const currentData = form.getFieldValue("resultTableData");
-      if (currentData) {
-        setTableData(currentData);
-      }
-    }
-  }, [editModalVisible, form]);
-
-  const handleViewResult = (order) => {
-    setSelectedOrder(order);
-    setModalVisible(true);
-  };
-
-  const handleEditResult = (order) => {
-    setSelectedOrder(order);
-
-    if (
-      currentEditOrderId === order.id &&
-      tempFormData &&
-      Object.keys(tempFormData).length > 0
-    ) {
-      form.setFieldsValue(tempFormData);
-    } else {
-      let initialTableData = [];
-
-      if (order.resultTableData && Array.isArray(order.resultTableData)) {
-        initialTableData = [...order.resultTableData];
-      } else if (
-        !order.resultTableData &&
-        order.result &&
-        typeof order.result === "string"
-      ) {
-        try {
-          const parsedData = JSON.parse(order.result);
-          if (Array.isArray(parsedData)) {
-            initialTableData = parsedData;
-          }
-        } catch (err) {
-          console.error("Failed to parse result data:", err);
+    // Tự động điền thông tin nếu có prefill trong localStorage, chỉ điền orderId và requesterName
+    const prefill = localStorage.getItem("dna_sample_collection_prefill");
+    if (prefill) {
+      const data = JSON.parse(prefill);
+      if (data.orderId) {
+        form.setFieldsValue({ orderId: data.orderId.toString() });
+        // Tìm đơn hàng tương ứng và set các trường liên quan
+        const orders = JSON.parse(localStorage.getItem("dna_orders") || "[]");
+        const order = orders.find(
+          (o) => o.id.toString() === data.orderId.toString()
+        );
+        if (order) {
+          setSelectedOrder(order);
+          form.setFieldsValue({
+            collectionDate: order.appointmentDate
+              ? dayjs(order.appointmentDate)
+              : undefined,
+            requesterName: order.name || "",
+            requesterAddress: order.address || "",
+            testType: order.type || "",
+          });
         }
       }
-
-      if (
-        initialTableData.length === 0 &&
-        Array.isArray(order.members) && order.members.length > 0
-      ) {
-        initialTableData = order.members.map((mem, idx) => ({
-          key: `${Date.now()}-${idx}`,
-          name: mem.name || mem.hoTen || mem.hovaten || "",
-          birthYear: mem.birthYear || mem.namSinh || mem.namsinh || mem.birth || "",
-          gender: mem.gender || mem.gioiTinh || mem.gioitinh || "",
-          relationship: mem.relationship || mem.moiQuanHe || mem.moiquanhe || mem.relation || "",
-          sampleType: mem.sampleType || mem.loaiMau || mem.loaimau || ""
-        }));
+      if (data.requesterName) {
+        form.setFieldsValue({ requesterName: data.requesterName });
       }
+      localStorage.removeItem("dna_sample_collection_prefill");
+    }
+    // Tự động điền tên nhân viên thu mẫu
+    if (user && user.name) {
+      form.setFieldsValue({ collector: user.name });
+    }
+  }, [form, user]);
 
-      if (initialTableData.length === 0) {
-        initialTableData = [{ key: Date.now().toString() }];
+  // Auto-save form draft mỗi khi form thay đổi
+  const handleAutoSave = (changedValues, allValues) => {
+    localStorage.setItem(
+      "sample_collection_draft",
+      JSON.stringify({
+        form: allValues,
+        donors: donors,
+      })
+    );
+  };
+  // Auto-save khi donors thay đổi
+  useEffect(() => {
+    const values = form.getFieldsValue();
+    localStorage.setItem(
+      "sample_collection_draft",
+      JSON.stringify({
+        form: values,
+        donors: donors,
+      })
+    );
+  }, [donors]);
+
+  // Khi mở tab, nếu có draft thì tự động điền lại
+  useEffect(() => {
+    const draft = localStorage.getItem("sample_collection_draft");
+    if (draft) {
+      try {
+        const data = JSON.parse(draft);
+        if (data.form) {
+          // Convert stored string dates back to dayjs object for DatePicker compatibility
+          const draftForm = { ...data.form };
+          if (draftForm.collectionDate) {
+            draftForm.collectionDate = dayjs(
+              draftForm.collectionDate,
+              "DD/MM/YYYY"
+            );
+          }
+          form.setFieldsValue(draftForm);
+        }
+        if (data.donors) {
+          setDonors(data.donors);
+        }
+      } catch {
+        // Xoá các dòng console.log debug
       }
+    }
+  }, [form]);
 
-      const formValues = {
-        status: order.status,
-        result: order.result || "",
-        testingMethod: order.testingMethod || "STR",
-        testingNotes: order.testingNotes || "",
-        resultTableData: initialTableData,
-        conclusion: order.conclusion || "",
+  const addDonor = () => {
+    const newDonor = {
+      id: donors.length + 1,
+      name: "",
+      idType: "CCCD",
+      idNumber: "",
+      idIssueDate: null,
+      idIssuePlace: "",
+      nationality: "Việt Nam",
+      address: "",
+      sampleType: "Máu",
+      sampleQuantity: "01",
+      relationship: "",
+      healthIssues: "không",
+      fingerprint: null,
+    };
+    const newDonors = [...donors, newDonor];
+    setDonors(newDonors);
+    const values = form.getFieldsValue();
+    localStorage.setItem(
+      "sample_collection_draft",
+      JSON.stringify({ form: values, donors: newDonors })
+    );
+  };
+
+  const removeDonor = (id) => {
+    if (donors.length > 1) {
+      const newDonors = donors.filter((donor) => donor.id !== id);
+      setDonors(newDonors);
+      const values = form.getFieldsValue();
+      localStorage.setItem(
+        "sample_collection_draft",
+        JSON.stringify({ form: values, donors: newDonors })
+      );
+    }
+  };
+
+  const updateDonor = (id, field, value) => {
+    const newDonors = donors.map((donor) =>
+      donor.id === id ? { ...donor, [field]: value } : donor
+    );
+    setDonors(newDonors);
+    const values = form.getFieldsValue();
+    localStorage.setItem(
+      "sample_collection_draft",
+      JSON.stringify({ form: values, donors: newDonors })
+    );
+  };
+
+  const handleSave = async (values) => {
+    try {
+      const newForm = {
+        id: Date.now(),
+        ...values,
+        collectionDate: values.collectionDate.format("DD/MM/YYYY"),
+        donors: donors,
+        createdAt: new Date().toLocaleString("vi-VN"),
+        status: "Đã lấy mẫu",
       };
 
-      form.setFieldsValue(formValues);
-      setTempFormData(formValues);
-    }
+      const updatedForms = [...sampleForms, newForm];
+      setSampleForms(updatedForms);
+      localStorage.setItem(
+        "sample_collection_forms",
+        JSON.stringify(updatedForms)
+      );
 
-    setCurrentEditOrderId(order.id);
-    setEditModalVisible(true);
-  };
-
-  const handleViewReport = (order) => {
-    setSelectedOrder(order);
-    setReportModalVisible(true);
-  };
-
-  const handleSaveResult = async (values) => {
-    try {
-      let dataToSave =
-        Array.isArray(values.resultTableData) &&
-          values.resultTableData.length > 0
-          ? values.resultTableData
-          : tableData;
-      const resultTableDataCopy = Array.isArray(dataToSave)
-        ? JSON.parse(JSON.stringify(dataToSave))
-        : null;
-      // Kiểm tra nếu là lỗi mẫu
-      const isErrorSample = (values.conclusion || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').trim() === 'loi mau';
-      if (isErrorSample) {
-        console.log('[DEBUG][handleSaveResult] updateOrder called with (error sample):', {
-          id: selectedOrder.id,
-          status: selectedOrder.status,
-          result: resultTableDataCopy ? JSON.stringify(resultTableDataCopy) : values.result,
-          testingMethod: values.testingMethod,
-          testingNotes: values.conclusion,
-          conclusion: values.conclusion,
-          resultTableData: resultTableDataCopy,
-          updatedAt: new Date().toLocaleString("vi-VN"),
-        });
-        updateOrder(selectedOrder.id, {
-          // Không đổi trạng thái, chỉ update kết quả và các trường khác
-          result: resultTableDataCopy
-            ? JSON.stringify(resultTableDataCopy)
-            : values.result,
-          testingMethod: values.testingMethod,
-          testingNotes: values.conclusion,
-          conclusion: values.conclusion,
-          resultTableData: resultTableDataCopy,
-          updatedAt: new Date().toLocaleString("vi-VN"),
-        });
-        setTempFormData({});
-        setCurrentEditOrderId(null);
-        setEditModalVisible(false);
-        message.warning("Mẫu bị lỗi. Đã gửi thông báo cho khách hàng yêu cầu gửi lại mẫu!");
-        return;
-      }
-      // Trường hợp bình thường: luôn chuyển trạng thái sang 'Chờ xác thực'
-      console.log('[DEBUG][handleSaveResult] updateOrder called with:', {
-        id: selectedOrder.id,
-        status: "Chờ xác thực",
-        result: resultTableDataCopy ? JSON.stringify(resultTableDataCopy) : values.result,
-        testingMethod: values.testingMethod,
-        testingNotes: values.conclusion,
-        conclusion: values.conclusion,
-        resultTableData: resultTableDataCopy,
-        updatedAt: new Date().toLocaleString("vi-VN"),
+      // Cập nhật đơn hàng tương ứng nếu có
+      const orders = JSON.parse(localStorage.getItem("dna_orders") || "[]");
+      // Chuẩn hóa dữ liệu bảng mẫu
+      const resultTableData = donors.map((donor, idx) => ({
+        key: idx + 1,
+        name: donor.name || "",
+        birth: donor.birth || "",
+        gender: donor.gender || "",
+        relationship: donor.relationship || donor.relation || "",
+        sampleType: donor.sampleType || "",
+      }));
+      const updatedOrders = orders.map((order) => {
+        if (
+          order.id.toString() === values.orderId &&
+          order.type.includes("hành chính")
+        ) {
+          return {
+            ...order,
+            sampleCollected: true,
+            sampleCollectionId: newForm.id,
+            status: "Đang xử lý",
+            sampleInfo: {
+              location: values.location,
+              collector: values.collector,
+              collectionDate: values.collectionDate.format("DD/MM/YYYY"),
+              donors: donors, // đồng bộ
+            },
+            resultTableData: resultTableData, // đồng bộ
+            members: donors, // đồng bộ
+          };
+        }
+        return order;
       });
-      updateOrder(selectedOrder.id, {
-        status: "Chờ xác thực",
-        result: resultTableDataCopy
-          ? JSON.stringify(resultTableDataCopy)
-          : values.result,
-        testingMethod: values.testingMethod,
-        testingNotes: values.conclusion,
-        conclusion: values.conclusion,
-        resultTableData: resultTableDataCopy,
-        updatedAt: new Date().toLocaleString("vi-VN"),
-      });
-      setTempFormData({});
-      setCurrentEditOrderId(null);
-      setEditModalVisible(false);
-      message.success("Đã gửi yêu cầu xác thực cho quản lý!");
-    } catch (error) {
-      console.error("Error updating result:", error);
-      message.error("Có lỗi xảy ra khi cập nhật kết quả!");
+      localStorage.setItem("dna_orders", JSON.stringify(updatedOrders));
+
+      setShowSuccessOverlay(true);
+      setTimeout(() => {
+        setShowSuccessOverlay(false);
+        form.resetFields();
+        setDonors([
+          {
+            id: 1,
+            name: "",
+            idType: "CCCD",
+            idNumber: "",
+            idIssueDate: null,
+            idIssuePlace: "",
+            nationality: "Việt Nam",
+            sampleType: "Máu",
+            relationship: "",
+          },
+        ]);
+        localStorage.removeItem("sample_collection_draft");
+      }, 3000);
+    } catch {
+      message.error("Có lỗi xảy ra khi lưu biên bản!");
     }
   };
 
-  const handleFormValuesChange = (changedValues, allValues) => {
-    setTempFormData(allValues);
-  };
-
-  const handleDeleteOrder = (order) => {
-    setConfirmHideOrder(order);
-  };
-
-  const handleConfirmHide = () => {
-    if (confirmHideOrder) {
-      updateOrder(confirmHideOrder.id, { isHidden: true });
-      message.success("Đơn hàng đã được ẩn khỏi giao diện nhân viên!");
-      setConfirmHideOrder(null);
-    }
-  };
-
-  const handleCancelHide = () => {
-    setConfirmHideOrder(null);
-  };
-
-  const handleUnhideOrder = (order) => {
-    updateOrder(order.id, { isHidden: false });
-    message.success("Đơn hàng đã được hiện lại cho nhân viên!");
-  };
-
-  // Hàm chuẩn hóa chuỗi: bỏ dấu tiếng Việt, chuyển thường, loại bỏ khoảng trắng thừa
-  function normalizeStatus(str) {
-    if (!str) return '';
-    return str
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/\p{Diacritic}/gu, '')
-      .replace(/\s+/g, '')
-      .trim();
-  }
-
-  const getStatusColor = (status) => {
-    switch (getStatusText(status)) {
-      case "Đang xử lý":
-        return "#00b894";
-      case "Chờ xác thực":
-        return "#722ed1";
-      case "Hoàn thành":
-        return "#52c41a";
-      case "Từ chối":
-        return "#d63031";
-      default:
-        return "#00b894";
-    }
-  };
-
-  const columns = [
-    {
-      title: "Mã đơn",
-      dataIndex: "id",
-      key: "id",
-      render: (id) => `#${id}`,
-      width: 100,
-    },
-    {
-      title: "Khách hàng",
-      dataIndex: "name",
-      key: "name",
-      width: 150,
-    },
-    {
-      title: "Loại xét nghiệm",
-      dataIndex: "type",
-      key: "type",
-      width: 200,
-    },
-    {
-      title: "Trạng thái",
-      dataIndex: "status",
-      key: "status",
-      width: 120,
-      render: (status) => (
-        <Tag style={{
-          background: getStatusColor(status),
-          color: '#fff',
-          fontWeight: 700,
-          border: 'none',
-          fontSize: 15,
-          padding: '4px 0',
-          boxShadow: '0 2px 8px #0001',
-          width: 120,
-          textAlign: 'center',
-          display: 'inline-block',
-        }}>{getStatusText(status)}</Tag>
-      ),
-    },
-    {
-      title: "Ngày tạo",
-      dataIndex: "date",
-      key: "date",
-      width: 120,
-    },
-    {
-      title: "Thao tác",
-      key: "action",
-      width: 180,
-      render: (_, record) => (
-        <Space size="small">
-          <Button
-            type="primary"
-            size="small"
-            icon={<EyeOutlined />}
-            onClick={() => handleViewResult(record)}
-            style={{ background: "#1890ff", color: "#fff" }}
-          >
-            Xem
-          </Button>
-          {getStatusText(record.status) !== "Hoàn thành" && (
-            <Button
-              type="default"
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => handleEditResult(record)}
-            >
-              Cập nhật
-            </Button>
-          )}
-          {record.result && (
-            <Button
-              type="default"
-              size="small"
-              icon={<FileTextOutlined />}
-              onClick={() => handleViewReport(record)}
-            >
-              Báo cáo
-            </Button>
-          )}
-          <Tooltip title="Ẩn đơn hàng khỏi giao diện nhân viên">
-            <Button
-              icon={<EyeInvisibleOutlined style={{ color: "#595959" }} />}
-              onClick={() => handleDeleteOrder(record)}
-              size="small"
-              style={{
-                marginLeft: 8,
-                borderColor: "#bfbfbf",
-                color: "#595959",
-                background: "#f5f5f5",
-                fontWeight: 600,
-              }}
-            >
-              Ẩn
-            </Button>
-          </Tooltip>
-          {record.status === STATUS_REJECTED && record.managerNote && (
-            <Button
-              size="small"
-              icon={<ExclamationCircleOutlined style={{ color: '#faad14' }} />}
-              onClick={() => {
-                setReasonText(record.managerNote);
-                setReasonModalVisible(true);
-              }}
-              style={{ background: '#fffbe6', borderColor: '#faad14', color: '#faad14', fontWeight: 600 }}
-            >
-              Lý Do
-            </Button>
-          )}
-        </Space>
-      ),
-    },
-  ];
-
-  const stats = {
-    total: orders.length,
-    processing: orders.filter((o) => getStatusText(o.status) === STATUS_PROCESSING).length,
-    waitingApproval: orders.filter((o) => getStatusText(o.status) === STATUS_WAITING_APPROVAL).length,
-    completed: orders.filter((o) => getStatusText(o.status) === STATUS_COMPLETED).length,
-    rejected: orders.filter((o) => getStatusText(o.status) === STATUS_REJECTED).length,
-    withResults: orders.filter((o) => o.result).length,
+  // Hàm kiểm tra ngày không hợp lệ (trước hôm nay hoặc là Chủ nhật)
+  const disabledDate = (current) => {
+    const today = dayjs().startOf("day");
+    if (!current) return false;
+    return current < today || current.day() === 0;
   };
 
   return (
@@ -442,623 +328,543 @@ const TestingResults = () => {
         <h1
           style={{ fontSize: 28, fontWeight: 700, color: "#00a67e", margin: 0 }}
         >
-          Xét nghiệm & Kết quả
+          {title}
         </h1>
         <p style={{ color: "#666", margin: "8px 0 0 0", fontSize: 16 }}>
-          Quản lý kết quả xét nghiệm và cập nhật trạng thái
+          Tạo biên bản lấy mẫu cho xét nghiệm ADN{" "}
+          {caseType === "Dân sự" ? "dân sự" : "hành chính"}
         </p>
       </div>
 
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} md={6}>
+      <Tabs defaultActiveKey="create">
+        <TabPane tab="Tạo biên bản mới" key="create">
           <Card>
-            <Statistic
-              title="Tổng đơn hàng"
-              value={stats.total}
-              valueStyle={{ color: "#00a67e" }}
-              prefix={<FileTextOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Đang xử lý"
-              value={stats.processing}
-              valueStyle={{ color: "#1890ff" }}
-              prefix={<ExperimentOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Chờ xác thực"
-              value={stats.waitingApproval}
-              valueStyle={{ color: "#722ed1" }}
-              prefix={<ClockCircleOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Hoàn thành"
-              value={stats.completed}
-              valueStyle={{ color: "#52c41a" }}
-              prefix={<CheckCircleOutlined />}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="Từ chối"
-              value={stats.rejected}
-              valueStyle={{ color: "#ff4d4f" }}
-              prefix={<FileTextOutlined />}
-            />
-          </Card>
-        </Col>
-      </Row>
+            <Form
+              form={form}
+              layout="vertical"
+              onFinish={handleSave}
+              onValuesChange={handleAutoSave}
+            >
+              <Title
+                level={4}
+                style={{ textAlign: "center", color: "#00a67e" }}
+              >
+                BIÊN BẢN LẤY MẪU XÉT NGHIỆM
+              </Title>
 
-      <Card>
-        <div
-          style={{
-            marginBottom: 16,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <Select
-            value={filterStatus}
-            onChange={setFilterStatus}
-            style={{ width: 200 }}
-            placeholder="Lọc theo trạng thái"
-          >
-            <Option value="all">Tất cả trạng thái</Option>
-            <Option value={STATUS_PROCESSING}>{STATUS_PROCESSING}</Option>
-            <Option value={STATUS_WAITING_APPROVAL}>{STATUS_WAITING_APPROVAL}</Option>
-            <Option value={STATUS_COMPLETED}>{STATUS_COMPLETED}</Option>
-            <Option value={STATUS_REJECTED}>{STATUS_REJECTED}</Option>
-          </Select>
-          <Space>
-            <Button icon={<DownloadOutlined />}>Xuất Excel</Button>
-            <Button icon={<PrinterOutlined />}>In báo cáo</Button>
-          </Space>
-        </div>
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item
+                    name="collectionDate"
+                    label="Ngày lấy mẫu"
+                    rules={[
+                      {
+                        required: true,
+                        message: "Vui lòng chọn ngày lấy mẫu!",
+                      },
+                    ]}
+                  >
+                    <DatePicker
+                      format="DD/MM/YYYY"
+                      style={{ width: "100%" }}
+                      // disabled={
+                      //   !!selectedOrder && !!selectedOrder.appointmentDate
+                      // }
+                      disabledDate={disabledDate}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={16}>
+                  <Form.Item
+                    name="location"
+                    label="Địa điểm lấy mẫu"
+                    rules={[
+                      { required: true, message: "Vui lòng nhập địa điểm!" },
+                    ]}
+                  >
+                    <Input placeholder="Ví dụ: 132 Hoàng Văn Thụ, phường Phương Sài, Nha Trang" />
+                  </Form.Item>
+                </Col>
+              </Row>
 
-        <Tabs
-          defaultActiveKey="all"
-          items={[
-            {
-              key: "all",
-              label: "Tất cả đơn hàng",
-              children: (
-                <Table
-                  columns={columns}
-                  dataSource={filteredOrders}
-                  rowKey={(record) => record.id || String(Math.random())}
-                  pagination={{
-                    pageSize: 10,
-                    showSizeChanger: true,
-                    showQuickJumper: true,
-                    showTotal: (total, range) =>
-                      `${range[0]}-${range[1]} của ${total} đơn hàng`,
-                  }}
-                  scroll={{ x: 1000 }}
-                />
-              ),
-            },
-            {
-              key: "urgent",
-              label: "Cần xử lý gấp",
-              children: (
-                <Table
-                  columns={columns}
-                  dataSource={filteredOrders.filter(
-                    (order) =>
-                      order.priority === "Cao" && order.status !== STATUS_COMPLETED
-                  )}
-                  rowKey={(record) => record.id || String(Math.random())}
-                  pagination={{
-                    pageSize: 10,
-                    showSizeChanger: true,
-                    showQuickJumper: true,
-                    showTotal: (total, range) =>
-                      `${range[0]}-${range[1]} của ${total} đơn hàng`,
-                  }}
-                  scroll={{ x: 1000 }}
-                />
-              ),
-            },
-            {
-              key: "waitingApproval",
-              label: "Chờ xác thực",
-              children: (
-                <Table
-                  columns={columns}
-                  dataSource={filteredOrders.filter(
-                    (order) =>
-                      !order.isHidden && order.status === STATUS_WAITING_APPROVAL
-                  )}
-                  rowKey={(record) => record.id || String(Math.random())}
-                  pagination={{
-                    pageSize: 10,
-                    showSizeChanger: true,
-                    showQuickJumper: true,
-                    showTotal: (total, range) =>
-                      `${range[0]}-${range[1]} của ${total} đơn hàng`,
-                  }}
-                  scroll={{ x: 1000 }}
-                />
-              ),
-            },
-            {
-              key: "hidden",
-              label: "Đơn đã ẩn",
-              children: (
-                <Table
-                  columns={[
-                    ...columns,
-                    {
-                      title: "Thao tác",
-                      key: "action-unhide",
-                      width: 120,
-                      render: (_, record) => (
-                        <Button
-                          size="small"
-                          type="primary"
-                          onClick={() => handleUnhideOrder(record)}
-                          style={{ background: "#52c41a", color: "#fff" }}
-                        >
-                          Hiện lại
-                        </Button>
-                      ),
-                    },
-                  ]}
-                  dataSource={orders.filter((order) => order.isHidden)}
-                  rowKey={(record) => record.id || String(Math.random())}
-                  pagination={{
-                    pageSize: 10,
-                    showSizeChanger: true,
-                    showQuickJumper: true,
-                    showTotal: (total, range) =>
-                      `${range[0]}-${range[1]} của ${total} đơn đã ẩn`,
-                  }}
-                  scroll={{ x: 1000 }}
-                />
-              ),
-            },
-          ]}
-        />
-      </Card>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    name="collector"
+                    label="Nhân viên thu mẫu"
+                    rules={[
+                      { required: true, message: "Vui lòng chọn nhân viên!" },
+                    ]}
+                  >
+                    <Input
+                      value={user?.name || ""}
+                      disabled
+                      style={{ fontWeight: 700, color: "#00a67e" }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="orderId"
+                    label="Mã đơn hàng"
+                    rules={[
+                      { required: true, message: "Vui lòng chọn đơn hàng!" },
+                    ]}
+                  >
+                    <Input
+                      value={selectedOrder ? `#${selectedOrder.id}` : ""}
+                      disabled
+                      style={{ fontWeight: 700, color: "#0984e3" }}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
 
-      <Modal
-        title="Xem kết quả xét nghiệm"
-        open={modalVisible}
-        onCancel={() => setModalVisible(false)}
-        footer={null}
-        width={800}
-      >
-        {selectedOrder && (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <h3>Thông tin khách hàng:</h3>
-              <p>
-                <strong>Họ tên:</strong> {selectedOrder.name}
-              </p>
-              <p>
-                <strong>Email:</strong> {selectedOrder.email}
-              </p>
-              <p>
-                <strong>Số điện thoại:</strong> {selectedOrder.phone}
-              </p>
-              <p>
-                <strong>Loại xét nghiệm:</strong> {selectedOrder.type}
-              </p>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <h3>Thông tin xét nghiệm:</h3>
-              <p>
-                <strong>Trạng thái:</strong>{" "}
-                <Tag
-                  color={
-                    selectedOrder.status === STATUS_COMPLETED
-                      ? "green"
-                      : selectedOrder.status === STATUS_PROCESSING
-                        ? "blue"
-                        : "orange"
-                  }
-                >
-                  {selectedOrder.status}
-                </Tag>
-              </p>
-              {selectedOrder.testingMethod && (
-                <p>
-                  <strong>Phương pháp xét nghiệm:</strong>{" "}
-                  {selectedOrder.testingMethod}
-                </p>
-              )}
-              {selectedOrder.completedDate && (
-                <p>
-                  <strong>Ngày hoàn thành:</strong>{" "}
-                  {selectedOrder.completedDate}
-                </p>
-              )}
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <h3>Kết quả xét nghiệm:</h3>
-              {(() => {
-                const hasTableData =
-                  selectedOrder.resultTableData &&
-                  Array.isArray(selectedOrder.resultTableData) &&
-                  selectedOrder.resultTableData.length > 0;
-
-                if (hasTableData) {
-                  return (
-                    <div style={{ background: '#f8fff3', border: '2px solid #b6e4b6', borderRadius: 12, padding: 16, margin: '16px 0' }}>
-                      <table className="result-table" style={{ minWidth: '100%', tableLayout: 'auto', borderCollapse: 'collapse' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>STT</th>
-                            <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>Họ và tên</th>
-                            <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>Năm sinh</th>
-                            <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>Giới tính</th>
-                            <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>Mối quan hệ</th>
-                            <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>Loại mẫu</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Array.isArray(selectedOrder.resultTableData)
-                            ? selectedOrder.resultTableData.map((data, index) => (
-                              <tr key={data.key}>
-                                <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{index + 1}</td>
-                                <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{data.name}</td>
-                                <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{data.birthYear}</td>
-                                <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{data.gender}</td>
-                                <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{data.relationship}</td>
-                                <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{data.sampleType}</td>
-                              </tr>
-                            ))
-                            : null}
-                        </tbody>
-                      </table>
-
-                      {selectedOrder.conclusion && (
-                        <div style={{ marginTop: 16 }}>
-                          <h4>Kết luận:</h4>
-                          <div>{selectedOrder.conclusion}</div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-
-                if (selectedOrder.result) {
-                  return (
-                    <div
-                      style={{
-                        background: "#f6ffed",
-                        border: "1px solid #b7eb8f",
-                        padding: 16,
-                        borderRadius: 6,
-                      }}
+              {selectedOrder && (
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      name="testType"
+                      label="Loại xét nghiệm"
+                      rules={[
+                        {
+                          required: true,
+                          message: "Vui lòng chọn loại xét nghiệm!",
+                        },
+                      ]}
                     >
-                      {selectedOrder.result}
-                    </div>
-                  );
-                }
+                      <Select
+                        value={form.getFieldValue("testType")}
+                        onChange={(value) =>
+                          form.setFieldsValue({ testType: value })
+                        }
+                      >
+                        {adminTestTypes.map((type) => (
+                          <Option key={type} value={type}>
+                            {type}
+                          </Option>
+                        ))}
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                </Row>
+              )}
 
-                return (
-                  <div
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    name="requesterName"
+                    label="Người yêu cầu xét nghiệm"
+                    rules={[
+                      {
+                        required: true,
+                        message: "Vui lòng nhập tên người yêu cầu!",
+                      },
+                    ]}
+                  >
+                    <Input placeholder="Họ và tên người yêu cầu" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    name="requesterAddress"
+                    label="Địa chỉ hiện tại"
+                    rules={[
+                      { required: true, message: "Vui lòng nhập địa chỉ!" },
+                    ]}
+                  >
+                    <Input placeholder="Địa chỉ hiện tại của người yêu cầu" />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Divider>Thông tin người cho mẫu</Divider>
+
+              {donors.map((donor, index) => (
+                <Card
+                  key={donor.id}
+                  size="small"
+                  title={`Người cho mẫu thứ ${index + 1}`}
+                  extra={
+                    donors.length > 1 && (
+                      <Button
+                        type="text"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => removeDonor(donor.id)}
+                        style={{
+                          color: "#ff4d4f",
+                          fontWeight: "500",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.target.style.fontWeight = "600";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.target.style.fontWeight = "500";
+                        }}
+                      />
+                    )
+                  }
+                  style={{ marginBottom: 16 }}
+                >
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label="Họ và tên" required>
+                        <Input
+                          value={donor.name}
+                          onChange={(e) =>
+                            updateDonor(donor.id, "name", e.target.value)
+                          }
+                          placeholder="Họ và tên đầy đủ"
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={6}>
+                      <Form.Item label="Giới tính" required>
+                        <Select
+                          value={donor.gender}
+                          onChange={(value) =>
+                            updateDonor(donor.id, "gender", value)
+                          }
+                        >
+                          <Option value="Nam">Nam</Option>
+                          <Option value="Nữ">Nữ</Option>
+                          <Option value="Khác">Khác</Option>
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                    <Col span={6}>
+                      <Form.Item label="Ngày sinh" required>
+                        <DatePicker
+                          value={
+                            donor.birth
+                              ? dayjs(donor.birth, "DD/MM/YYYY")
+                              : null
+                          }
+                          onChange={(date) =>
+                            updateDonor(
+                              donor.id,
+                              "birth",
+                              date ? date.format("DD/MM/YYYY") : ""
+                            )
+                          }
+                          format="DD/MM/YYYY"
+                          style={{ width: "100%" }}
+                          disabledDate={(current) =>
+                            current && current > dayjs().endOf("day")
+                          }
+                          placeholder="Chọn ngày sinh"
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label="Loại giấy tờ" required>
+                        <Select
+                          value={
+                            ["CCCD", "Bằng Lái Xe"].includes(donor.idType)
+                              ? donor.idType
+                              : "CCCD"
+                          }
+                          onChange={(value) =>
+                            updateDonor(donor.id, "idType", value)
+                          }
+                        >
+                          <Option value="CCCD">CCCD</Option>
+                          <Option value="Bằng Lái Xe">Bằng Lái Xe</Option>
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label="Quốc tịch">
+                        <Input
+                          value={donor.nationality}
+                          onChange={(e) =>
+                            updateDonor(donor.id, "nationality", e.target.value)
+                          }
+                          placeholder="Quốc tịch"
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item
+                        label={
+                          donor.idType === "CCCD" ? "Số CCCD" : "Số giấy tờ"
+                        }
+                        required
+                      >
+                        <Input
+                          value={donor.idNumber}
+                          onChange={(e) =>
+                            updateDonor(donor.id, "idNumber", e.target.value)
+                          }
+                          placeholder={
+                            donor.idType === "CCCD"
+                              ? "Nhập số CCCD"
+                              : "Nhập số giấy tờ"
+                          }
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label="Ngày cấp">
+                        <DatePicker
+                          value={donor.idIssueDate}
+                          onChange={(date) =>
+                            updateDonor(donor.id, "idIssueDate", date)
+                          }
+                          format="DD/MM/YYYY"
+                          style={{ width: "100%" }}
+                          disabledDate={(current) =>
+                            current && current > dayjs().endOf("day")
+                          }
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label="Nơi cấp">
+                        <Input
+                          value={donor.idIssuePlace}
+                          onChange={(e) =>
+                            updateDonor(
+                              donor.id,
+                              "idIssuePlace",
+                              e.target.value
+                            )
+                          }
+                          placeholder="Nơi cấp giấy tờ"
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item label="Loại mẫu" required>
+                        <Select
+                          value={donor.sampleType}
+                          onChange={(value) =>
+                            updateDonor(donor.id, "sampleType", value)
+                          }
+                        >
+                          <Option value="Nước bọt">Nước bọt</Option>
+                          <Option value="Máu">Máu</Option>
+                          <Option value="Tóc">Tóc</Option>
+                          <Option value="Móng">Móng</Option>
+                          <Option value="Niêm mạc">Niêm mạc</Option>
+                        </Select>
+                      </Form.Item>
+                    </Col>
+                    <Col span={12}>
+                      <Form.Item label="Mối quan hệ" required>
+                        <Input
+                          value={donor.relationship}
+                          onChange={(e) =>
+                            updateDonor(
+                              donor.id,
+                              "relationship",
+                              e.target.value
+                            )
+                          }
+                          placeholder="Ví dụ: Bố, Mẹ, Con..."
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </Card>
+              ))}
+
+              <Button
+                type="dashed"
+                onClick={addDonor}
+                icon={<PlusOutlined />}
+                style={{
+                  width: "100%",
+                  marginBottom: 24,
+                  borderColor: "#00a67e",
+                  color: "#00a67e",
+                  fontWeight: "500",
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.borderColor = "#008f6b";
+                  e.target.style.color = "#008f6b";
+                  e.target.style.fontWeight = "600";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.borderColor = "#00a67e";
+                  e.target.style.color = "#00a67e";
+                  e.target.style.fontWeight = "500";
+                }}
+              >
+                Thêm người cho mẫu
+              </Button>
+
+              <div style={{ textAlign: "center" }}>
+                <Space size="large">
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    icon={<CheckCircleOutlined />}
+                    size="large"
                     style={{
-                      background: "#fff7e6",
-                      border: "1px solid #ffd591",
-                      padding: 16,
-                      borderRadius: 6,
+                      backgroundColor: "#00a67e",
+                      borderColor: "#00a67e",
+                      fontWeight: "500",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.backgroundColor = "#008f6b";
+                      e.target.style.borderColor = "#008f6b";
+                      e.target.style.fontWeight = "600";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.backgroundColor = "#00a67e";
+                      e.target.style.borderColor = "#00a67e";
+                      e.target.style.fontWeight = "500";
                     }}
                   >
-                    Kết quả chưa có sẵn
-                  </div>
-                );
-              })()}
-            </div>
-
-            {selectedOrder.testingNotes && (
-              <div>
-                <h3>Ghi chú kỹ thuật:</h3>
-                <div
-                  style={{
-                    background: "#f6f6f6",
-                    padding: 12,
-                    borderRadius: 4,
-                  }}
-                >
-                  {selectedOrder.testingNotes}
-                </div>
+                    Xác nhận lấy mẫu
+                  </Button>
+                </Space>
               </div>
-            )}
+            </Form>
+          </Card>
+        </TabPane>
+      </Tabs>
 
-            {selectedOrder.sampleInfo && (
-              <div style={{ marginTop: 16 }}>
-                <h3>Thông tin mẫu xét nghiệm:</h3>
-                <div
-                  style={{
-                    background: "#f0f5ff",
-                    border: "1px solid #d6e4ff",
-                    padding: 12,
-                    borderRadius: 4,
-                  }}
-                >
-                  <p>
-                    <strong>Ngày lấy mẫu:</strong>{" "}
-                    {selectedOrder.sampleInfo.collectionDate}
-                  </p>
-                  <p>
-                    <strong>Nhân viên thu mẫu:</strong>{" "}
-                    {selectedOrder.sampleInfo.collector}
-                  </p>
-                  <p>
-                    <strong>Số lượng người cho mẫu:</strong>{" "}
-                    {selectedOrder.sampleInfo.donors.length}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
-
+      {/* Modal xem biên bản */}
       <Modal
-        title={`Cập nhật kết quả - Đơn hàng #${selectedOrder?.id}`}
-        open={editModalVisible}
-        onCancel={() => {
-          const currentValues = form.getFieldsValue();
-          setTempFormData(currentValues);
-          setEditModalVisible(false);
-        }}
-        onOk={() => form.submit()}
-        okText="Lưu"
-        cancelText="Hủy"
-        width={1000}
-        destroyOnHidden={false}
-        okButtonProps={{
-          style: {
-            background: '#1890ff',
-            borderColor: '#1890ff',
-            color: '#fff',
-            fontWeight: 700,
-            fontSize: 16,
-            padding: '7px 32px',
-            borderRadius: 6,
-            transition: 'background 0.2s, color 0.2s',
-          },
-          onMouseOver: e => {
-            e.target.style.background = '#1765ad';
-            e.target.style.color = '#fff';
-            e.target.style.borderColor = '#1765ad';
-          },
-          onMouseOut: e => {
-            e.target.style.background = '#1890ff';
-            e.target.style.color = '#fff';
-            e.target.style.borderColor = '#1890ff';
-          },
-          disabled: getStatusText(selectedOrder?.status) === STATUS_COMPLETED
-        }}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSaveResult}
-          onValuesChange={handleFormValuesChange}
-        >
-          <Form.Item label="Trạng thái">
-            <Tag style={{ background: getStatusColor(selectedOrder?.status), color: '#fff', fontWeight: 700, border: 'none', fontSize: 15, padding: '4px 0', boxShadow: '0 2px 8px #0001' }}>
-              {getStatusText(selectedOrder?.status)}
-            </Tag>
-          </Form.Item>
-
-          <Form.Item
-            name="testingMethod"
-            label="Phương pháp xét nghiệm"
-            rules={[
-              {
-                required: true,
-                message: "Vui lòng chọn phương pháp xét nghiệm!",
-              },
-            ]}
-          >
-            <Select placeholder="Chọn phương pháp">
-              <Option value="STR">STR (Short Tandem Repeat)</Option>
-              <Option value="SNP">SNP (Single Nucleotide Polymorphism)</Option>
-              <Option value="CODIS">CODIS (Combined DNA Index System)</Option>
-              <Option value="Y-STR">Y-STR (Y-chromosome STR)</Option>
-              <Option value="mtDNA">mtDNA (Mitochondrial DNA)</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="resultTableData" label="Kết quả xét nghiệm">
-            <div
-              style={{
-                border: "1px solid #d9d9d9",
-                borderRadius: "2px",
-                padding: "16px",
-                marginBottom: "16px",
-              }}
-            >
-              <div style={{ background: '#f8fff3', border: '2px solid #b6e4b6', borderRadius: 12, padding: 16, margin: '16px 0' }}>
-                <table className="result-table" style={{ minWidth: '100%', tableLayout: 'auto', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>STT</th>
-                      <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>Họ và tên</th>
-                      <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>Năm sinh</th>
-                      <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>Giới tính</th>
-                      <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>Mối quan hệ</th>
-                      <th style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>Loại mẫu</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.isArray(tableData) ? tableData.map((data, index) => (
-                      <tr key={data.key}>
-                        <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{index + 1}</td>
-                        <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{data.name}</td>
-                        <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{data.birthYear}</td>
-                        <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{data.gender}</td>
-                        <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{data.relationship}</td>
-                        <td style={{ padding: '8px 12px', fontSize: 16, wordBreak: 'break-word', whiteSpace: 'normal', textAlign: 'center' }}>{data.sampleType}</td>
-                      </tr>
-                    )) : null}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </Form.Item>
-
-          <Form.Item
-            name="conclusion"
-            label="Kết luận"
-            rules={[{ required: true, message: "Vui lòng nhập kết luận!" }]}
-          >
-            <TextArea rows={3} placeholder="Nhập kết luận và ghi chú kỹ thuật..." />
-          </Form.Item>
-
-          <Form.Item label="Tải lên file kết quả">
-            <Upload>
-              <Button icon={<UploadOutlined />}>Chọn file</Button>
-            </Upload>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title="Báo cáo kết quả xét nghiệm"
-        open={reportModalVisible}
-        onCancel={() => setReportModalVisible(false)}
-        footer={null}
-        width={800}
-      >
-        {selectedOrder && (
-          <div>
-            <div style={{ textAlign: "center", marginBottom: 24 }}>
-              <Title level={2}>BÁO CÁO KẾT QUẢ XÉT NGHIỆM ADN</Title>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <Text strong>Mã đơn hàng: </Text>
-              <Text>#{selectedOrder.id}</Text>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <Text strong>Khách hàng: </Text>
-              <Text>{selectedOrder.name}</Text>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <Text strong>Loại xét nghiệm: </Text>
-              <Text>{selectedOrder.type}</Text>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <Text strong>Ngày xét nghiệm: </Text>
-              <Text>{selectedOrder.date}</Text>
-            </div>
-
-            <Divider />
-
-            <div style={{ marginBottom: 16 }}>
-              <Title level={4}>Kết quả xét nghiệm</Title>
-              <div
-                style={{ padding: 12, background: "#f5f5f5", borderRadius: 4 }}
-              >
-                {(() => {
-                  let tableData = [];
-                  try {
-                    const parsed = JSON.parse(selectedOrder.result);
-                    if (Array.isArray(parsed)) tableData = parsed;
-                  } catch {
-                    // Không phải JSON, hiển thị dạng text
-                  }
-                  if (tableData.length > 0) {
-                    return (
-                      <Table
-                        bordered
-                        dataSource={tableData}
-                        pagination={false}
-                        rowKey={(record) => record.key || String(Math.random())}
-                        size="small"
-                      >
-                        <Table.Column title="STT" key="index" render={(text, record, index) => index + 1} width={60} />
-                        <Table.Column title="Họ và tên" dataIndex="name" key="name" />
-                        <Table.Column title="Năm sinh" dataIndex="birthYear" key="birthYear" width={120} />
-                        <Table.Column title="Giới tính" dataIndex="gender" key="gender" width={120} />
-                        <Table.Column title="Mối quan hệ" dataIndex="relationship" key="relationship" />
-                        <Table.Column title="Loại mẫu" dataIndex="sampleType" key="sampleType" />
-                      </Table>
-                    );
-                  }
-                  // Nếu không phải JSON array, hiển thị text
-                  return <Text>{selectedOrder.result}</Text>;
-                })()}
-              </div>
-            </div>
-
-            {selectedOrder.conclusion && (
-              <div style={{ marginBottom: 16 }}>
-                <Title level={4}>Kết luận</Title>
-                <div
-                  style={{
-                    padding: 12,
-                    background: "#f5f5f5",
-                    borderRadius: 4,
-                  }}
-                >
-                  <Text>{selectedOrder.conclusion}</Text>
-                </div>
-              </div>
-            )}
-
-            <Divider />
-
-            <div style={{ textAlign: "center", marginTop: 24 }}>
-              <Text>Báo cáo được tạo tự động bởi hệ thống DNA Lab</Text>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        open={!!confirmHideOrder}
-        onCancel={handleCancelHide}
-        onOk={handleConfirmHide}
-        okText="Ẩn"
-        cancelText="Huỷ"
-        title={`Xác nhận ẩn đơn hàng #${confirmHideOrder?.id}`}
-        okButtonProps={{ danger: true, type: "primary" }}
-      >
-        <p>Bạn có chắc chắn muốn ẩn thông tin đơn hàng này không? </p>
-      </Modal>
-
-      <Modal
-        title="Lý do từ chối của quản lý"
-        open={reasonModalVisible}
-        onCancel={() => setReasonModalVisible(false)}
+        title="Xem biên bản lấy mẫu"
+        open={false}
+        onCancel={() => {}}
         footer={[
-          <Button key="close" onClick={() => setReasonModalVisible(false)}>
+          <Button
+            key="close"
+            onClick={() => {}}
+            style={{
+              backgroundColor: "#00a67e",
+              borderColor: "#00a67e",
+              color: "white",
+              fontWeight: "500",
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = "#008f6b";
+              e.target.style.borderColor = "#008f6b";
+              e.target.style.fontWeight = "600";
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = "#00a67e";
+              e.target.style.borderColor = "#00a67e";
+              e.target.style.fontWeight = "500";
+            }}
+          >
             Đóng
           </Button>,
+          <Button
+            key="print"
+            type="primary"
+            icon={<PrinterOutlined />}
+            style={{
+              backgroundColor: "#00a67e",
+              borderColor: "#00a67e",
+              fontWeight: "500",
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = "#008f6b";
+              e.target.style.borderColor = "#008f6b";
+              e.target.style.fontWeight = "600";
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = "#00a67e";
+              e.target.style.borderColor = "#00a67e";
+              e.target.style.fontWeight = "500";
+            }}
+          >
+            In biên bản
+          </Button>,
         ]}
+        width={800}
       >
-        <div style={{ whiteSpace: 'pre-line', color: '#fa541c', fontWeight: 500 }}>
-          {reasonText}
-        </div>
+        {/* Content of the modal */}
       </Modal>
+
+      {showSuccessOverlay && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            background: "rgba(255,255,255,0.97)",
+            zIndex: 9999,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 18,
+            boxShadow: "0 8px 32px #0002",
+            animation: "fadeIn 0.3s",
+          }}
+        >
+          <div
+            style={{
+              background: "linear-gradient(135deg, #e0f7fa 0%, #e6ffe6 100%)",
+              border: "2.5px solid #00b894",
+              borderRadius: 20,
+              padding: "48px 40px",
+              boxShadow: "0 4px 32px #00b89422",
+              textAlign: "center",
+              maxWidth: 480,
+              minWidth: 320,
+            }}
+          >
+            <div style={{ fontSize: 64, marginBottom: 18, lineHeight: 1 }}>
+              🧬
+            </div>
+            <div
+              style={{
+                fontSize: 30,
+                fontWeight: 900,
+                color: "#009e74",
+                marginBottom: 14,
+                letterSpacing: 0.5,
+              }}
+            >
+              Lấy mẫu thành công!
+            </div>
+            <div
+              style={{
+                fontSize: 20,
+                color: "#222",
+                marginBottom: 10,
+                fontWeight: 500,
+              }}
+            >
+              Biên bản đã được lưu và đơn hàng chuyển sang trạng thái Đang xử
+              lý.
+            </div>
+            <div
+              style={{
+                fontSize: 16,
+                color: "#555",
+                marginTop: 18,
+                lineHeight: 1.6,
+              }}
+            >
+              Bạn có thể tiếp tục nhập đơn mới hoặc quay lại danh sách.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-export default TestingResults;
+export default SampleCollection;

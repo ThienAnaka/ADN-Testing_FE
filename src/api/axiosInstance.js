@@ -3,6 +3,7 @@ import Cookies from "js-cookie"; // đảm bảo bạn import đúng
 
 const API_BASE_URL = import.meta.env.VITE_URL_BE;
 
+
 const axiosInstance = axios.create({
   baseURL: API_BASE_URL, //đây chính là url gốc của api BE là phải xử lý cors
   timeout: 100000, //thời gian chờ phản hồi từ server
@@ -42,7 +43,7 @@ axiosInstance.interceptors.response.use(
           {},
           { withCredentials: true } // 👈 THÊM DÒNG NÀY
         );
-        // console.log(response)
+        console.log('token: ', response)
         const accessToken = response.data;
         if (!accessToken) {
           throw new Error("No accessToken received");
@@ -52,11 +53,12 @@ axiosInstance.interceptors.response.use(
 
         // Retry original request with new token
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-        return axios(originalRequest);
+        return await axiosInstance(originalRequest);
       } catch (refreshError) {
         // Refresh failed, redirect to login
-        localStorage.removeItem("accessToken");
-        Cookies.remove("refreshToken");
+        // localStorage.removeItem("accessToken");
+        // localStorage.clear()
+        // Cookies.remove("refreshToken");
         // window.location.href = "/";
         return Promise.reject(refreshError);
       }

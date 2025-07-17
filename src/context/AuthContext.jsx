@@ -1,5 +1,4 @@
 import { createContext, useState, useEffect } from "react";
-import axios from "axios";
 import axiosInstance from "../api/axiosInstance";
 import userApi from "../api/userApI";
 import Cookies from "js-cookie"; // đảm bảo bạn import đúng
@@ -15,8 +14,6 @@ export const AuthProvider = ({ children }) => {
     if (storedUser) setUser(JSON.parse(storedUser));
   }, []);
 
-  // Đổi baseURL thành mockAPI của bạn
-  const API_URL = "https://localhost:7200";
 
   // Đăng nhập
   const login = async (email, password) => {
@@ -30,6 +27,7 @@ export const AuthProvider = ({ children }) => {
         userId: response.data.userId,
         role_id: response.data.roleId,
       };
+      // console.log(userData)
       setUser(userData);
       localStorage.setItem(
         "accessToken",
@@ -70,9 +68,18 @@ export const AuthProvider = ({ children }) => {
         PhoneNumber: phone.trim(),
         Password: password.trim(),
       });
-
+      // console.log(res);
       // Trường hợp đăng ký thành công (ví dụ: status 200 và có flag success)
-      if (res.data && res.data.success) {
+      if (res.status == 200 && res.data.success) {
+        // const regisProfile = await userApi.createProfile({
+        //   userId: res.data.Id,
+        //   gender: "",
+        //   address: "",
+        //   dateOfBirth: "",
+        //   identityId: "",
+        //   fingerfile: "",
+        //   updatedAt: "",
+        // });
         return {
           success: true,
           message: res.data?.message || "Đăng ký thành công",
@@ -108,115 +115,112 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Cập nhật user
-  const updateUser = async (data) => {
-    if (!user) return;
+  // // Cập nhật user
+  // const updateUser = async (data) => {
+  //   if (!user) return;
 
-    try {
-      const updateRes = await axios.put(`${API_URL}/${user.user_id}`, {
-        ...user,
-        ...data,
-      });
-      setUser(updateRes.data);
-      sessionStorage.setItem("user", JSON.stringify(updateRes.data));
-      localStorage.setItem("dna_user", JSON.stringify(updateRes.data));
-    } catch {
-      // Có thể xử lý lỗi ở đây
-    }
-  };
+  //   try {
+  //     const updateRes = await axios.put(`${API_URL}/${user.user_id}`, {
+  //       ...user,
+  //       ...data,
+  //     });
+  //     setUser(updateRes.data);
+  //     sessionStorage.setItem("user", JSON.stringify(updateRes.data));
+  //     localStorage.setItem("dna_user", JSON.stringify(updateRes.data));
+  //   } catch {
+  //     // Có thể xử lý lỗi ở đây
+  //   }
+  // };
 
   // Đổi mật khẩu ko có xác thực OTP
-  const requestPasswordChange = async (currentPassword, newPassword) => {
-    if (!user) {
-      return {
-        success: false,
-        message: "Bạn chưa đăng nhập!",
-      };
-    }
+  // const requestPasswordChange = async (currentPassword, newPassword) => {
+  //   if (!user) {
+  //     return {
+  //       success: false,
+  //       message: "Bạn chưa đăng nhập!",
+  //     };
+  //   }
 
-    try {
-      const response = await userApi.changePassword({
-        email: user.email,
-        currentPassword,
-        newPassword,
-      });
-      if (response) return;
-      const responseText =
-        typeof response.data === "string" ? response.data.toLowerCase() : "";
+  //   try {
+  //     const response = await userApi.changePassword({
+  //       email: user.email,
+  //       currentPassword,
+  //       newPassword,
+  //     });
 
-      // ✅ Thành công
-      if (
-        response.status === 200 &&
-        responseText.includes("password changed successfully")
-      ) {
-        logout(); // ⛔ Gọi logout sau khi đổi mật khẩu
-        return {
-          success: true,
-          message: "Đổi mật khẩu thành công! Vui lòng đăng nhập lại.",
-        };
-      }
+  //     const responseText =
+  //       typeof response.data === "string" ? response.data.toLowerCase() : "";
 
-      // ❓ Trường hợp API trả về 200 nhưng dữ liệu không rõ ràng
-      return {
-        success: false,
-        message: "Phản hồi không hợp lệ từ hệ thống. Vui lòng thử lại.",
-      };
-    } catch (err) {
-      const errorMessage =
-        typeof err.response?.data === "string"
-          ? err.response.data.toLowerCase()
-          : "";
+  //     if (
+  //       response.status === 200 &&
+  //       responseText.includes("password changed successfully")
+  //     ) {
+  //       return {
+  //         success: true,
+  //         message: "Đổi mật khẩu thành công! Vui lòng đăng nhập lại.",
+  //       };
+  //     }
 
-      if (
-        err.response?.status === 400 &&
-        errorMessage.includes("current password is incorrect")
-      ) {
-        return {
-          success: false,
-          message: "Mật khẩu hiện tại không đúng!",
-        };
-      }
+  //     return {
+  //       success: false,
+  //       message: "Phản hồi không hợp lệ từ hệ thống. Vui lòng thử lại.",
+  //     };
+  //   } catch (err) {
+  //     const errorMessage =
+  //       typeof err.response?.data === "string"
+  //         ? err.response.data.toLowerCase()
+  //         : "";
 
-      return {
-        success: false,
-        message: "Đã xảy ra lỗi khi kết nối đến server.",
-      };
-    }
-  };
+  //     if (
+  //       err.response?.status === 400 &&
+  //       errorMessage.includes("current password is incorrect")
+  //     ) {
+  //       return {
+  //         success: false,
+  //         message: "Mật khẩu hiện tại không đúng!",
+  //       };
+  //     }
 
-  const verifyPasswordChange = async (otpInput) => {
-    if (!user) return { success: false, message: "Bạn chưa đăng nhập!" };
-    const otpData = JSON.parse(
-      sessionStorage.getItem(`otp_${user.email}`) || "null"
-    );
+  //     return {
+  //       success: false,
+  //       message: "Đã xảy ra lỗi khi kết nối đến server.",
+  //     };
+  //   }
+  // };
 
-    if (!otpData)
-      return {
-        success: false,
-        message: "Không tìm thấy yêu cầu đổi mật khẩu!",
-      };
-    if (Date.now() - otpData.created > 10 * 60 * 1000) {
-      sessionStorage.removeItem(`otp_${user.email}`);
-      return { success: false, message: "Mã xác thực đã hết hạn!" };
-    }
-    if (otpInput !== otpData.otp) {
-      return { success: false, message: "Mã xác thực không đúng!" };
-    }
-    // Đổi mật khẩu trên mockAPI
-    try {
-      const updateRes = await axios.put(`${API_URL}/${user.user_id}`, {
-        ...user,
-        password: otpData.newPassword,
-      });
-      setUser(updateRes.data);
-      sessionStorage.setItem("user", JSON.stringify(updateRes.data));
-      localStorage.setItem("dna_user", JSON.stringify(updateRes.data));
-      sessionStorage.removeItem(`otp_${user.email}`);
-      return { success: true };
-    } catch {
-      return { success: false, message: "Có lỗi xảy ra!" };
-    }
-  };
+  // const verifyPasswordChange = async (otpInput) => {
+  //   if (!user) return { success: false, message: "Bạn chưa đăng nhập!" };
+  //   const otpData = JSON.parse(
+  //     sessionStorage.getItem(`otp_${user.email}`) || "null"
+  //   );
+
+  //   if (!otpData)
+  //     return {
+  //       success: false,
+  //       message: "Không tìm thấy yêu cầu đổi mật khẩu!",
+  //     };
+  //   if (Date.now() - otpData.created > 10 * 60 * 1000) {
+  //     sessionStorage.removeItem(`otp_${user.email}`);
+  //     return { success: false, message: "Mã xác thực đã hết hạn!" };
+  //   }
+  //   if (otpInput !== otpData.otp) {
+  //     return { success: false, message: "Mã xác thực không đúng!" };
+  //   }
+  //   // Đổi mật khẩu trên mockAPI
+  //   try {
+  //     const updateRes = await axios.put(`${API_URL}/${user.user_id}`, {
+  //       ...user,
+  //       password: otpData.newPassword,
+  //     });
+  //     setUser(updateRes.data);
+  //     sessionStorage.setItem("user", JSON.stringify(updateRes.data));
+  //     localStorage.setItem("dna_user", JSON.stringify(updateRes.data));
+  //     sessionStorage.removeItem(`otp_${user.email}`);
+  //     return { success: true };
+  //   } catch {
+  //     return { success: false, message: "Có lỗi xảy ra!" };
+  //   }
+  // };
 
   return (
     <AuthContext.Provider
@@ -225,9 +229,9 @@ export const AuthProvider = ({ children }) => {
         login,
         logout,
         register,
-        updateUser,
-        requestPasswordChange,
-        verifyPasswordChange,
+        // updateUser,
+        // requestPasswordChange,
+        // verifyPasswordChange,
       }}
     >
       {children}

@@ -33,17 +33,19 @@ import {
   ExperimentOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
-import { useOrderContext } from "../../context/OrderContext";
+// import { useOrderContext } from "../../context/OrderContext";
 import { StaffDashboardContext } from "./StaffDashboard";
 import { AuthContext } from "../../context/AuthContext";
 import SampleCollection from "./SampleCollection";
+import staffApi from "../../api/staffApi";
+// import { useServiceContext } from "../../context/ServiceContext";
 
 const { Option } = Select;
 const { TextArea } = Input;
 const { TabPane } = Tabs;
 
 const CenterSampling = () => {
-  const { getAllOrders, updateOrder } = useOrderContext();
+  // const { getAllOrders, updateOrder } = useOrderContext();
   const [appointments, setAppointments] = useState([]);
   const [selectedAppointment, setSelectedAppointment] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -58,47 +60,93 @@ const CenterSampling = () => {
   });
   const dashboardCtx = useContext(StaffDashboardContext);
   const { user } = useContext(AuthContext);
+  // const services = useServiceContext();
 
   // Lấy dữ liệu đơn hàng từ context
-  const loadAppointments = () => {
-    const allOrders = getAllOrders();
-    const centerSamplingOrders = allOrders
-      .filter((order) => order.sampleMethod === "center" && !order.isHidden)
-      .map((order) => {
-        // Map trạng thái cũ sang flow mới
-        let status = order.status || order.appointmentStatus;
-        if (["Chờ xử lý", "PENDING", "PENDING_CONFIRM"].includes(status)) status = "Chờ xác nhận";
-        if (status === "PROCESSING") status = "Đang lấy mẫu";
-        if (status === "da_hen") status = "Đã hẹn";
-        if (status === "da_den") status = "Đã đến";
-        if (status === "vang_mat" || status === "huy") status = "Đã hủy";
-        return {
-          ...order,
-          status: status,
-          appointmentDate: order.appointmentDate || null,
-          staffAssigned: order.staffAssigned || null,
-          notes: order.notes || "",
-          timeSlot: order.timeSlot || "09:00-10:00",
-        };
-      });
+  const fetchSamples = async (requestId) => {
+    try {
+      const res = await staffApi.getSamplesByRequestId(requestId);
+      console.log(res);
+      if (res.status !== 200) throw new Error("Lỗi khi lấy samples");
+      return res.data || [];
+    } catch (err) {
+      console.error("Fetch samples error:", err);
+      return [];
+    }
+  };
+  const loadAppointments = async () => {
+    try {
+      const res = await staffApi.getTestProccesses();
+      if (res.status !== 200) throw new Error("Lỗi khi gọi API");
+      console.log("res center", res);
+      const rawData = res.data.filter(
+        (item) => item.request?.collectType == "At Center"
+      );
 
-    setAppointments(centerSamplingOrders);
+      const mapped = await Promise.all(
+        rawData.map(async (item) => {
+          const declarant = item.declarant || {};
+          const samples = await fetchSamples(item.request.requestId);
+          const status =
+            item.testProcess?.currentStatus?.toUpperCase() ||
+            item.status?.toUpperCase() ||
+            "";
+          return {
+            processId: item.testProcess?.processId,
+            id: item.request.requestId,
+            type: item.request?.serviceName,
+            category: item.request?.category,
+            status,
+            createdAt: item.request?.createdAt,
+            identityNumber: declarant.identityNumber || "",
+            appointmentDate: item.request?.scheduleDate
+              ? dayjs(item.request.scheduleDate)
+              : null,
+            name: declarant.fullName,
+            phone: declarant.phone,
+            address: declarant.address,
+            email: declarant.email,
+            kitStatus: item.testProcess?.currentStatus,
+            samplerName: item.testProcess?.samplerName,
+            notes: item.testProcess?.notes,
+            sampleInfo: {
+              location: item.testProcess?.collectionLocation,
+              collector: item.testProcess?.collector,
+              collectionDate: item.testProcess?.collectionDate,
+              donors: samples.map((s) => ({
+                name: s.ownerName,
+                gender: s.gender,
+                relationship: s.relationship,
+                yob: s.yob,
+                sampleType: s.sampleType,
+                idType: s.idType,
+                idNumber: s.idNumber,
+                idIssueDate: s.idIssueDate,
+                idIssuePlace: s.idIssuePlace,
+                nationality: s.nationality,
+                address: s.address,
+                sampleQuantity: s.sampleQuantity,
+                healthIssues: s.healthIssues,
+              })),
+            },
+          };
+        })
+      );
 
-    // Tính toán thống kê
-    const newStats = {
-      total: centerSamplingOrders.length,
-      scheduled: centerSamplingOrders.filter(
-        (apt) => apt.status === "WAITING_FOR_APPOINTMENT"
-      ).length,
-      arrived: centerSamplingOrders.filter(
-        (apt) => apt.status === "SAMPLE_COLLECTING"
-      ).length,
-      missed: centerSamplingOrders.filter((apt) => apt.status === "CANCELLED")
-        .length,
-      canceled: centerSamplingOrders.filter((apt) => apt.status === "CANCELLED")
-        .length,
-    };
-    setStats(newStats);
+      // Cập nhật thống kê
+      const stat = {
+        total: mapped.length,
+        scheduled: mapped.filter((m) => m.status === "ĐÃ HẸN").length,
+        arrived: mapped.filter((m) => m.status === "ĐÃ ĐẾN").length,
+        missed: mapped.filter((m) => m.status === "VẮNG MẶT").length,
+        canceled: mapped.filter((m) => m.status === "ĐÃ HỦY").length,
+      };
+      setStats(stat);
+
+      setAppointments(mapped);
+    } catch (error) {
+      console.log("Error loading home sampling requests:", error);
+    }
   };
 
   useEffect(() => {
@@ -127,18 +175,15 @@ const CenterSampling = () => {
   // Dùng chung cho cả lịch hẹn và thống kê
   const getStatusColor = (status) => {
     switch (status) {
-      case "Chờ xác nhận":
-        return "#fdcb6e"; // vàng cam
-      case "Đã hẹn":
+      case "WAITING_FOR_APPOINTMENT":
         return "#40a9ff"; // xanh dương nhạt
-      case "Đã đến":
+      case "SAMPLE_RECEIVED":
         return "#52c41a"; // xanh lá
-      case "Đang lấy mẫu":
+      case "":
         return "#fa8c16"; // cam
-      case "Đang xử lý":
+      case "SAMPLE_RECEIVEDaa":
         return "#0984e3"; // xanh dương tươi
-      case "Đã hủy":
-        return "#d63031"; // đỏ tươi
+
       default:
         return "#b2bec3"; // xám nhạt
     }
@@ -146,18 +191,14 @@ const CenterSampling = () => {
 
   const getStatusText = (status) => {
     switch (status) {
-      case "Chờ xác nhận":
-        return "Chờ xác nhận";
-      case "Đã hẹn":
+      case "WAITING_FOR_APPOINTMENT":
         return "Đã hẹn";
       case "Đã đến":
         return "Đã đến";
-      case "Đang lấy mẫu":
-        return "Đang lấy mẫu";
+      case "SAMPLE_RECEIVED":
+        return "Đã lấy mẫu";
       case "Đang xử lý":
         return "Đang xử lý";
-      case "Đã hủy":
-        return "Đã hủy";
       default:
         return status;
     }
@@ -186,11 +227,11 @@ const CenterSampling = () => {
   };
 
   // Hàm xác định phân loại
-  const getCaseType = (type) => {
-    if (!type) return '';
-    if (type.toLowerCase().includes('dân sự')) return 'Dân sự';
-    if (type.toLowerCase().includes('hành chính')) return 'Hành chính';
-    return '';
+  const getCaseType = (category) => {
+    if (!category) return "";
+    if (category.includes("Voluntary")) return "Dân sự";
+    if (category.includes("Administrative")) return "Hành chính";
+    return "";
   };
 
   const columns = [
@@ -199,7 +240,7 @@ const CenterSampling = () => {
       dataIndex: "id",
       key: "id",
       width: 100,
-      render: (id) => `#${id}`,
+      render: (id) => `#DNA${id}`,
     },
     {
       title: "Khách hàng",
@@ -227,14 +268,17 @@ const CenterSampling = () => {
     },
     {
       title: "Phân loại",
-      dataIndex: "type",
+      dataIndex: "category", // <-- thay vì "type"
       key: "caseType",
       width: 100,
-      render: (type) => {
-        const caseType = getCaseType(type);
+      render: (category) => {
+        const caseType = getCaseType(category);
         if (!caseType) return null;
         return (
-          <Tag color={caseType === 'Dân sự' ? '#722ed1' : '#fa8c16'} style={{ fontWeight: 600, fontSize: 14 }}>
+          <Tag
+            color={caseType === "Dân sự" ? "#722ed1" : "#fa8c16"}
+            style={{ fontWeight: 600, fontSize: 14 }}
+          >
             {caseType}
           </Tag>
         );
@@ -244,12 +288,11 @@ const CenterSampling = () => {
       title: "Ngày hẹn",
       dataIndex: "appointmentDate",
       key: "appointmentDate",
-      width: 120,
       render: (date) =>
         date ? (
           <span>
             <CalendarOutlined style={{ marginRight: 4 }} />
-            {date}
+            {dayjs(date).format("DD/MM/YYYY")}
           </span>
         ) : (
           <span style={{ color: "#999" }}>Chưa hẹn</span>
@@ -286,7 +329,9 @@ const CenterSampling = () => {
                 boxShadow: "0 2px 8px #1890ff22",
                 transition: "background 0.2s",
               }}
-              onMouseOver={(e) => (e.currentTarget.style.background = "#1765ad")}
+              onMouseOver={(e) =>
+                (e.currentTarget.style.background = "#1765ad")
+              }
               onMouseOut={(e) => (e.currentTarget.style.background = "#1890ff")}
             >
               Xem
@@ -304,15 +349,19 @@ const CenterSampling = () => {
                   border: "none",
                   boxShadow: "0 2px 8px #52c41a22",
                   transition: "background 0.2s",
-                  marginLeft: 8
+                  marginLeft: 8,
                 }}
-                onMouseOver={(e) => (e.currentTarget.style.background = "#389e0d")}
-                onMouseOut={(e) => (e.currentTarget.style.background = "#52c41a")}
+                onMouseOver={(e) =>
+                  (e.currentTarget.style.background = "#389e0d")
+                }
+                onMouseOut={(e) =>
+                  (e.currentTarget.style.background = "#52c41a")
+                }
                 onClick={() => {
-                  updateOrder(record.id, {
-                    status: "Đã hẹn",
-                    updatedAt: new Date().toLocaleString("vi-VN"),
-                  });
+                  // updateOrder(record.id, {
+                  //   status: "Đã hẹn",
+                  //   updatedAt: new Date().toLocaleString("vi-VN"),
+                  // });
                   loadAppointments();
                   message.success("Đã chuyển trạng thái sang Đã hẹn!");
                 }}
@@ -321,7 +370,7 @@ const CenterSampling = () => {
               </Button>
             )}
             {/* Đã hẹn: Đã đến */}
-            {statusText === "Đã hẹn" && (
+            {/* {statusText === "Đã hẹn" && (
               <Button
                 size="small"
                 icon={<CheckCircleOutlined />}
@@ -333,10 +382,14 @@ const CenterSampling = () => {
                   border: "none",
                   boxShadow: "0 2px 8px #52c41a22",
                   transition: "background 0.2s",
-                  marginLeft: 8
+                  marginLeft: 8,
                 }}
-                onMouseOver={(e) => (e.currentTarget.style.background = "#389e0d")}
-                onMouseOut={(e) => (e.currentTarget.style.background = "#52c41a")}
+                onMouseOver={(e) =>
+                  (e.currentTarget.style.background = "#389e0d")
+                }
+                onMouseOut={(e) =>
+                  (e.currentTarget.style.background = "#52c41a")
+                }
                 onClick={() => {
                   updateOrder(record.id, {
                     status: "Đã đến",
@@ -348,9 +401,9 @@ const CenterSampling = () => {
               >
                 Đã đến
               </Button>
-            )}
+            )} */}
             {/* Đã đến: Lấy mẫu */}
-            {statusText === "Đã đến" && (
+            {statusText === "Đã hẹn" && (
               <Button
                 size="small"
                 icon={<ExperimentOutlined />}
@@ -362,10 +415,14 @@ const CenterSampling = () => {
                   border: "none",
                   boxShadow: "0 2px 8px #fa8c1622",
                   transition: "background 0.2s",
-                  marginLeft: 8
+                  marginLeft: 8,
                 }}
-                onMouseOver={(e) => (e.currentTarget.style.background = "#d46b08")}
-                onMouseOut={(e) => (e.currentTarget.style.background = "#fa8c16")}
+                onMouseOver={(e) =>
+                  (e.currentTarget.style.background = "#d46b08")
+                }
+                onMouseOut={(e) =>
+                  (e.currentTarget.style.background = "#fa8c16")
+                }
                 onClick={() => handleGoToSampleCollection(record, true)}
               >
                 Lấy mẫu
@@ -384,10 +441,14 @@ const CenterSampling = () => {
                   border: "none",
                   boxShadow: "0 2px 8px #fa8c1622",
                   transition: "background 0.2s",
-                  marginLeft: 8
+                  marginLeft: 8,
                 }}
-                onMouseOver={(e) => (e.currentTarget.style.background = "#d46b08")}
-                onMouseOut={(e) => (e.currentTarget.style.background = "#fa8c16")}
+                onMouseOver={(e) =>
+                  (e.currentTarget.style.background = "#d46b08")
+                }
+                onMouseOut={(e) =>
+                  (e.currentTarget.style.background = "#fa8c16")
+                }
                 onClick={() => handleGoToSampleCollection(record, false)}
               >
                 Tiếp tục lấy mẫu
@@ -407,46 +468,58 @@ const CenterSampling = () => {
       ) === today
   );
 
-  const handleGoToSampleCollection = (record, isFirst) => {
-    const caseType = getCaseType(record.type);
-    if (caseType === 'Dân sự') {
+  const handleGoToSampleCollection = (record) => {
+    const caseType = record.category;
+    if (caseType === "Voluntary") {
+      const dataCollec = {
+        orderId: record.id,
+        orderProcessId: record.processId,
+        requesterName: record.name || "",
+        appointmentDate: record.appointmentDate || "",
+        fullName: record.name || "",
+        email: record.email || "",
+        phone: record.phone || "",
+        address: record.address || "",
+        cccd: record.identityNumber || record.cccd || "",
+        serviceType: record.type || "",
+      };
+      console.log(dataCollec);
       localStorage.setItem(
         "dna_sample_collection_prefill",
-        JSON.stringify({
-          orderId: record.id,
-          collectionDate: record.appointmentDate || "",
-          requesterName: record.name || "",
-          appointmentDate: record.appointmentDate || "",
-          fullName: record.name || "",
-          email: record.email || "",
-          phone: record.phone || "",
-          address: record.address || "",
-          cccd: record.idNumber || record.cccd || "",
-          serviceType: record.type || "",
-        })
+
+        JSON.stringify(dataCollec)
       );
+
       // Nếu là lần đầu bấm Lấy mẫu thì chuyển trạng thái sang Đang lấy mẫu
-      if (isFirst) {
-        updateOrder(record.id, {
-          status: "Đang lấy mẫu",
-          updatedAt: new Date().toLocaleString("vi-VN"),
-        });
-        loadAppointments();
-      }
+      // if (isFirst) {
+      //   updateOrder(record.id, {
+      //     status: "Đang lấy mẫu",
+      //     updatedAt: new Date().toLocaleString("vi-VN"),
+      //   });
+      //   loadAppointments();
+      // }
       // Chuyển tab sang lấy mẫu dân sự
       if (dashboardCtx?.setActiveTab) {
         dashboardCtx.setActiveTab("civil-sample-collection");
       }
     } else {
       // Hành chính: giữ logic cũ
+      const dataCollec = {
+        staffId: user.userId,
+        orderId: record.id,
+        orderProcessId: record.processId,
+        collectionDate: record.appointmentDate || "",
+        serviceType: record.type || "",
+        cccd: record.identityNumber || record.cccd || "",
+        address: record.address || "",
+        fullName: record.name || "",
+        email: record.email || "",
+        phone: record.phone || "",
+      };
+      console.log(dataCollec);
       localStorage.setItem(
         "dna_sample_collection_prefill",
-        JSON.stringify({
-          orderId: record.id,
-          collectionDate: record.appointmentDate || "",
-          requesterName: record.name || "",
-          serviceType: record.type || "",
-        })
+        JSON.stringify(dataCollec)
       );
       if (dashboardCtx?.setActiveTab) {
         dashboardCtx.setActiveTab("sample-collection");
@@ -526,10 +599,10 @@ const CenterSampling = () => {
               value={
                 stats.scheduled > 0
                   ? Math.round(
-                    (stats.arrived /
-                      (stats.scheduled + stats.arrived + stats.missed)) *
-                    100
-                  )
+                      (stats.arrived /
+                        (stats.scheduled + stats.arrived + stats.missed)) *
+                        100
+                    )
                   : 0
               }
               suffix="%"
@@ -557,13 +630,13 @@ const CenterSampling = () => {
               Tổng cộng: {todayAppointments.length} lịch hẹn
             </p>
           </div>
-          <Button
+          {/* <Button
             type="primary"
             icon={<CalendarOutlined />}
             onClick={() => setCalendarModalVisible(true)}
           >
             Xem lịch tháng
-          </Button>
+          </Button> */}
         </div>
 
         {todayAppointments.length > 0 ? (
@@ -601,7 +674,14 @@ const CenterSampling = () => {
                     </Tag>
                     {/* Hiển thị phân loại */}
                     {getCaseType(apt.type) && (
-                      <Tag color={getCaseType(apt.type) === 'Dân sự' ? '#722ed1' : '#fa8c16'} style={{ fontWeight: 600, fontSize: 14, marginLeft: 8 }}>
+                      <Tag
+                        color={
+                          getCaseType(apt.type) === "Dân sự"
+                            ? "#722ed1"
+                            : "#fa8c16"
+                        }
+                        style={{ fontWeight: 600, fontSize: 14, marginLeft: 8 }}
+                      >
                         {getCaseType(apt.type)}
                       </Tag>
                     )}
@@ -622,7 +702,7 @@ const CenterSampling = () => {
                   >
                     <UserOutlined style={{ marginRight: 4 }} />
                     {apt.staffAssigned ||
-                      (apt.status === "Xác nhận" && user?.name)
+                    (apt.status === "Xác nhận" && user?.name)
                       ? `Nhân viên: ${apt.staffAssigned || user?.name}`
                       : "Chưa phân công"}
                   </p>
@@ -713,7 +793,7 @@ const CenterSampling = () => {
 
       {/* Modal xem chi tiết */}
       <Modal
-        title={`Chi tiết lịch hẹn #${selectedAppointment?.id}`}
+        title={null}
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         footer={[
@@ -721,94 +801,292 @@ const CenterSampling = () => {
             Đóng
           </Button>,
         ]}
-        width={800}
+        width={600}
       >
         {selectedAppointment && (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <h3>Thông tin khách hàng:</h3>
-              <p>
-                <strong>Họ tên:</strong> {selectedAppointment.name}
-              </p>
-              <p>
-                <strong>Email:</strong> {selectedAppointment.email}
-              </p>
-              <p>
-                <strong>Số điện thoại:</strong> {selectedAppointment.phone}
-              </p>
-              <p>
-                <strong>Loại xét nghiệm:</strong> {selectedAppointment.type}
-              </p>
-              {selectedAppointment.category && (
-                <p>
-                  <strong>Thể loại:</strong>{" "}
-                  {selectedAppointment.category === "civil"
-                    ? "Dân sự"
-                    : selectedAppointment.category === "admin"
-                    ? "Hành chính"
-                    : selectedAppointment.category}
-                </p>
-              )}
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <h3>Thông tin lịch hẹn:</h3>
-              <p>
-                <strong>Ngày hẹn:</strong>{" "}
-                {selectedAppointment.appointmentDate || "Chưa hẹn"}
-              </p>
-              <p>
-                <strong>Trạng thái:</strong>{" "}
-                <Tag color={getStatusColor(selectedAppointment.status)}>
+          <div style={{ padding: 8 }}>
+            <div style={{ textAlign: "center", marginBottom: 24 }}>
+              <h2
+                style={{
+                  fontSize: 28,
+                  fontWeight: 800,
+                  color: "#00a67e",
+                  margin: 0,
+                  letterSpacing: 1,
+                }}
+              >
+                Chi tiết lịch hẹn #{selectedAppointment.id}
+              </h2>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  gap: 12,
+                  marginTop: 8,
+                }}
+              >
+                <Tag
+                  color={getStatusColor(selectedAppointment.status)}
+                  style={{ fontWeight: 700, fontSize: 16, padding: "4px 18px" }}
+                >
                   {getStatusText(selectedAppointment.status)}
                 </Tag>
-              </p>
+                {(() => {
+                  const caseType = getCaseType(selectedAppointment.type);
+                  if (!caseType) return null;
+                  return (
+                    <Tag
+                      color={caseType === "Dân sự" ? "#722ed1" : "#36cfc9"}
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 16,
+                        padding: "4px 18px",
+                      }}
+                    >
+                      {caseType}
+                    </Tag>
+                  );
+                })()}
+              </div>
             </div>
-
-            {selectedAppointment.notes && (
-              <div>
-                <h3>Ghi chú:</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              {/* Thông tin khách hàng */}
+              <div
+                style={{
+                  background: "#f8fafc",
+                  borderRadius: 10,
+                  padding: 18,
+                  boxShadow: "0 2px 8px #e6e6e633",
+                }}
+              >
                 <div
                   style={{
-                    background: "#f6f6f6",
-                    padding: 12,
-                    borderRadius: 4,
+                    fontWeight: 700,
+                    fontSize: 17,
+                    marginBottom: 10,
+                    color: "#009e74",
                   }}
                 >
-                  {selectedAppointment.notes}
+                  Thông tin khách hàng
+                </div>
+                <div style={{ marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: 17 }}>Họ tên:</span>{" "}
+                  <span style={{ fontSize: 17 }}>
+                    {selectedAppointment.name}
+                  </span>
+                </div>
+                <div style={{ marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: 17 }}>Email:</span>{" "}
+                  <span style={{ fontSize: 17 }}>
+                    {selectedAppointment.email}
+                  </span>
+                </div>
+                <div style={{ marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: 17 }}>
+                    Số điện thoại:
+                  </span>{" "}
+                  <span style={{ fontSize: 17 }}>
+                    {selectedAppointment.phone}
+                  </span>
                 </div>
               </div>
-            )}
-
-            {getStatusText(selectedAppointment.status) === 'Đang xử lý' && Array.isArray(selectedAppointment.members) && selectedAppointment.members.length > 0 && (
-              <div style={{ marginBottom: 16 }}>
-                <h3>Thành viên cung cấp mẫu:</h3>
-                <table style={{ width: '100%', borderCollapse: 'collapse', background: '#f8fafc', borderRadius: 8, overflow: 'hidden', marginTop: 8 }}>
-                  <thead>
-                    <tr style={{ background: '#e6f7ff' }}>
-                      <th style={{ padding: 8, fontWeight: 700, color: '#009e74' }}>STT</th>
-                      <th style={{ padding: 8, fontWeight: 700, color: '#009e74' }}>Họ và tên</th>
-                      <th style={{ padding: 8, fontWeight: 700, color: '#009e74' }}>Năm sinh</th>
-                      <th style={{ padding: 8, fontWeight: 700, color: '#009e74' }}>Giới tính</th>
-                      <th style={{ padding: 8, fontWeight: 700, color: '#009e74' }}>Mối quan hệ</th>
-                      <th style={{ padding: 8, fontWeight: 700, color: '#009e74' }}>Loại mẫu</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedAppointment.members.map((mem, idx) => (
-                      <tr key={idx} style={{ background: idx % 2 === 0 ? '#f9f9f9' : '#fff' }}>
-                        <td style={{ textAlign: 'center', padding: 6 }}>{idx + 1}</td>
-                        <td style={{ padding: 6 }}>{mem.name}</td>
-                        <td style={{ padding: 6 }}>{mem.birth}</td>
-                        <td style={{ padding: 6 }}>{mem.gender}</td>
-                        <td style={{ padding: 6 }}>{mem.relation}</td>
-                        <td style={{ padding: 6 }}>{mem.sampleType}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {/* Thông tin lịch hẹn */}
+              <div
+                style={{
+                  background: "#f6fafd",
+                  borderRadius: 10,
+                  padding: 18,
+                  boxShadow: "0 2px 8px #e6e6e633",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 17,
+                    marginBottom: 10,
+                    color: "#009e74",
+                  }}
+                >
+                  Thông tin lịch hẹn
+                </div>
+                <div style={{ marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: 17 }}>
+                    Loại xét nghiệm:
+                  </span>{" "}
+                  <span style={{ fontSize: 17 }}>
+                    {selectedAppointment.type}
+                  </span>
+                </div>
+                <div style={{ marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: 17 }}>
+                    Ngày hẹn:
+                  </span>{" "}
+                  <span style={{ fontWeight: 600, fontSize: 17 }}>
+                    {selectedAppointment.appointmentDate
+                      ? dayjs(selectedAppointment.appointmentDate).format(
+                          "DD/MM/YYYY"
+                        )
+                      : "Chưa hẹn"}
+                  </span>
+                </div>
               </div>
-            )}
+              {/* Ghi chú nếu có */}
+              {selectedAppointment.notes && (
+                <div
+                  style={{
+                    background: "#fffbe6",
+                    border: "1.5px solid #ffe58f",
+                    borderRadius: 10,
+                    padding: 16,
+                    color: "#ad6800",
+                    fontWeight: 600,
+                    fontSize: 16,
+                  }}
+                >
+                  Ghi chú: {selectedAppointment.notes}
+                </div>
+              )}
+              {/* Bảng thông tin mẫu khi Đang xử lý */}
+              {getStatusText(selectedAppointment.status) === "Đang xử lý" &&
+                (() => {
+                  let data =
+                    Array.isArray(selectedAppointment.members) &&
+                    selectedAppointment.members.length > 0
+                      ? selectedAppointment.members
+                      : Array.isArray(selectedAppointment.resultTableData) &&
+                        selectedAppointment.resultTableData.length > 0
+                      ? selectedAppointment.resultTableData
+                      : [];
+                  if (data.length === 0) return null;
+                  return (
+                    <div style={{ marginTop: 24 }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 17,
+                          marginBottom: 10,
+                          color: "#009e74",
+                        }}
+                      >
+                        Bảng thông tin mẫu của khách hàng
+                      </div>
+                      <table
+                        style={{
+                          width: "100%",
+                          borderCollapse: "collapse",
+                          background: "#f8fafc",
+                          borderRadius: 8,
+                          overflow: "hidden",
+                          marginTop: 8,
+                        }}
+                      >
+                        <thead>
+                          <tr style={{ background: "#e6f7ff" }}>
+                            <th
+                              style={{
+                                padding: 8,
+                                fontWeight: 700,
+                                color: "#009e74",
+                              }}
+                            >
+                              STT
+                            </th>
+                            <th
+                              style={{
+                                padding: 8,
+                                fontWeight: 700,
+                                color: "#009e74",
+                              }}
+                            >
+                              Họ và tên
+                            </th>
+                            <th
+                              style={{
+                                padding: 8,
+                                fontWeight: 700,
+                                color: "#009e74",
+                              }}
+                            >
+                              Ngày sinh
+                            </th>
+                            <th
+                              style={{
+                                padding: 8,
+                                fontWeight: 700,
+                                color: "#009e74",
+                              }}
+                            >
+                              Giới tính
+                            </th>
+                            <th
+                              style={{
+                                padding: 8,
+                                fontWeight: 700,
+                                color: "#009e74",
+                              }}
+                            >
+                              Mối quan hệ
+                            </th>
+                            <th
+                              style={{
+                                padding: 8,
+                                fontWeight: 700,
+                                color: "#009e74",
+                              }}
+                            >
+                              Loại mẫu
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.map((mem, idx) => (
+                            <tr
+                              key={idx}
+                              style={{
+                                background: idx % 2 === 0 ? "#f9f9f9" : "#fff",
+                              }}
+                            >
+                              <td style={{ textAlign: "center", padding: 6 }}>
+                                {idx + 1}
+                              </td>
+                              <td style={{ padding: 6 }}>
+                                {mem.name || mem.hoTen || mem.hovaten || ""}
+                              </td>
+                              <td style={{ padding: 6 }}>
+                                {mem.birth ||
+                                  mem.birthYear ||
+                                  mem.namSinh ||
+                                  mem.namsinh ||
+                                  ""}
+                              </td>
+                              <td style={{ padding: 6 }}>
+                                {mem.gender ||
+                                  mem.gioiTinh ||
+                                  mem.gioitinh ||
+                                  ""}
+                              </td>
+                              <td style={{ padding: 6 }}>
+                                {mem.relation ||
+                                  mem.relationship ||
+                                  mem.moiQuanHe ||
+                                  mem.moiquanhe ||
+                                  ""}
+                              </td>
+                              <td style={{ padding: 6 }}>
+                                {mem.sampleType ||
+                                  mem.loaiMau ||
+                                  mem.loaimau ||
+                                  ""}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+            </div>
           </div>
         )}
       </Modal>

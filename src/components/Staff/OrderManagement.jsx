@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useContext } from "react";
+
+import staffApi from "../../api/staffApi";
 import {
   Card,
   Table,
@@ -9,155 +11,209 @@ import {
   Modal,
   Form,
   Input,
-  Select,
   message,
   Space,
   Tabs,
   Statistic,
   Row,
   Col,
+  Typography,
   Tooltip,
 } from "antd";
 import {
   FileTextOutlined,
   EyeOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  UndoOutlined,
   EyeInvisibleOutlined,
 } from "@ant-design/icons";
-import { useOrderContext } from "../../context/OrderContext";
+// import { useOrderContext } from "../../context/OrderContext";
+import { AuthContext } from "../../context/AuthContext";
+
 const { Search } = Input;
 const { TabPane } = Tabs;
+const { Title } = Typography;
 
 const OrderManagement = () => {
-  const { getAllOrders, updateOrder } = useOrderContext();
+  // const { getAllOrders, updateOrder } = useOrderContext();
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [form] = Form.useForm();
+  // const [acceptModalVisible, setAcceptModalVisible] = useState(false);
+  // const [acceptingOrder, setAcceptingOrder] = useState(null);
+  // const [form] = Form.useForm();
   const [activeTab, setActiveTab] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [confirmHideOrder, setConfirmHideOrder] = useState(null);
+  const { user } = useContext(AuthContext);
 
-  // Lấy dữ liệu đơn hàng từ context
-  const loadOrders = () => {
-    const allOrders = getAllOrders();
-    setOrders(allOrders);
-    setFilteredOrders(allOrders.filter((order) => !order.isHidden));
-  };
-
-  useEffect(() => {
-    // Load orders khi component mount
-    loadOrders();
-  }, []);
-
-  // Lắng nghe sự kiện storage để tự động cập nhật khi manager thay đổi trạng thái
-  useEffect(() => {
-    const handleStorageChange = (event) => {
-      if (event.key === "dna_orders") {
-        // Force re-render bằng cách reload data
-        loadOrders();
-      }
-    };
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
-  }, []);
-
-  useEffect(() => {
-    let filtered = orders;
-
-    // Lọc theo tab
-    if (activeTab !== "all" && activeTab !== "hidden") {
-      filtered = filtered.filter(
-        (order) => order.status === activeTab && !order.isHidden
-      );
-    } else if (activeTab === "hidden") {
-      filtered = filtered.filter((order) => order.isHidden);
-    } else {
-      filtered = filtered.filter((order) => !order.isHidden);
-    }
-
-    // Tìm kiếm
-    if (searchText) {
-      filtered = filtered.filter(
-        (order) =>
-          order.name?.toLowerCase().includes(searchText.toLowerCase()) ||
-          order.email?.toLowerCase().includes(searchText.toLowerCase()) ||
-          order.id?.toString().includes(searchText)
-      );
-    }
-
-    setFilteredOrders(filtered);
-  }, [activeTab, searchText, orders]);
-
-  const handleViewOrder = (order) => {
-    setSelectedOrder(order);
-    setModalVisible(true);
-  };
-
-  const handleEditOrder = (order) => {
-    setSelectedOrder(order);
-    form.setFieldsValue({
-      status: order.status,
-      priority: order.priority,
-      notes: order.notes || "",
-    });
-  };
-
-  const handleDeleteOrder = (order) => {
-    setConfirmHideOrder(order);
-  };
-
-  const handleConfirmHide = async () => {
-    if (confirmHideOrder) {
-      await updateOrder(confirmHideOrder.id, { isHidden: true });
-      message.success("Đơn hàng đã được ẩn khỏi giao diện nhân viên!");
-      setConfirmHideOrder(null);
-      loadOrders();
-      setActiveTab("hidden");
-    }
-  };
-
-  const handleCancelHide = () => {
+  const handleConfirmHide = () => {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === confirmHideOrder.id ? { ...o, isHidden: true } : o
+      )
+    );
+    message.success("Đơn đã được ẩn");
     setConfirmHideOrder(null);
   };
 
   const handleUnhideOrder = (order) => {
-    updateOrder(order.id, { isHidden: false });
-    message.success("Đơn hàng đã được hiện lại cho nhân viên!");
-    loadOrders();
+    setOrders((prev) =>
+      prev.map((o) => (o.id === order.id ? { ...o, isHidden: false } : o))
+    );
+    message.success("Đã hiện lại đơn hàng");
   };
+
+  const confirmTestRequest = async (id, data) => {
+    const res = await staffApi.updateRequest(id, data);
+    if (res.status !== 200) throw new Error("Error confirm request");
+    return res.data;
+  };
+
+  const handleAcceptOrder = async (order) => {
+    try {
+      const payload = {
+        processId: 0,
+        requestId: order.id,
+        staffId: user.userId,
+        kitCode: "", // bỏ luôn generateKitCode
+        collectionType:
+          order.sampleMethod === "center" ? "At Center" : "At Home",
+        notes: "",
+      };
+
+      const res = await staffApi.assignRequest(payload);
+      if (res.status !== 200) throw new Error();
+
+      const resConfirmed = {
+        newStatus: "confirmed",
+        requestId: payload.requestId,
+      };
+
+      await confirmTestRequest(payload.requestId, resConfirmed);
+
+      message.success(
+        order.sampleMethod === "center"
+          ? "✅ Đã nhận đơn tại trung tâm!"
+          : "✅ Đã nhận đơn tại nhà!"
+      );
+      await loadAllSamplingRequests();
+    } catch (error) {
+      console.log(error);
+      message.error("Lỗi khi nhận đơn!");
+    }
+  };
+
+  // const handleSubmitAcceptOrder = async (values) => {
+  //   try {
+  //     const payload = {
+  //       processId: 0,
+  //       requestId: acceptingOrder.id,
+  //       staffId: user.userId,
+  //       kitCode: values.kitCode,
+  //       collectionType: "At Home",
+  //       notes: values.notes,
+  //     };
+  //     // console.log(payload);
+  //     const res = await staffApi.assignRequest(payload);
+  //     if (res.status !== 200) throw new Error();
+  //     const resConfirmed = {
+  //       requestId: payload.requestId,
+  //       newStatus: "confirmed",
+  //     };
+  //     // console.log(resConfirmed);
+  //     await confirmTestRequest(resConfirmed.requestId, resConfirmed);
+  //     message.success("Đã nhận đơn tại nhà!");
+
+  //     setAcceptModalVisible(false);
+  //     await loadAllSamplingRequests();
+  //   } catch {
+  //     message.error("Lỗi khi nhận đơn!");
+  //   }
+  // };
+
+  const loadAllSamplingRequests = async () => {
+    try {
+      const [homeRes, centerRes] = await Promise.all([
+        staffApi.getRequestHome(),
+        staffApi.getRequestCenter(),
+      ]);
+
+      const mapData = (data) =>
+        data.map((item) => {
+          const declarant = item.declarant || {};
+          const methodLabel = item.collectionType
+            ?.toLowerCase()
+            .includes("at home")
+            ? "home"
+            : "center";
+
+          return {
+            id: item.requestId,
+            name: declarant.fullName,
+            phone: declarant.phone,
+            address: declarant.address,
+            email: declarant.email,
+            identityNumber: declarant.identityNumber,
+            type: item.serviceName,
+            category:
+              item.serviceCategory === "Administrative"
+                ? "Hành chính"
+                : "Dân sự",
+            sampleMethod: methodLabel,
+            status: item.status?.toUpperCase() || "PENDING",
+            createdAt: item.createdAt,
+            date: new Date(item.createdAt).toLocaleDateString("vi-VN"),
+            scheduledDate: item.scheduleDate
+              ? new Date(item.scheduleDate).toLocaleString("vi-VN")
+              : null,
+            isHidden: item.isHidden ?? false,
+            sampleInfo: {
+              donors: (item.sample || []).map((s) => ({
+                name: s.ownerName,
+                gender: s.gender,
+                relationship: s.relationship,
+                yob: s.yob,
+                sampleType: s.sampleType,
+              })),
+            },
+          };
+        });
+
+      const allOrders = [...mapData(homeRes.data), ...mapData(centerRes.data)];
+      setOrders(allOrders);
+    } catch (error) {
+      console.error("Lỗi khi load đơn:", error);
+    }
+  };
+
+  useEffect(() => {
+    loadAllSamplingRequests();
+  }, []);
+
+  useEffect(() => {
+    let filtered = orders;
+    if (activeTab !== "all")
+      filtered = filtered.filter((o) => o.status === activeTab && !o.isHidden);
+    else filtered = filtered.filter((o) => !o.isHidden);
+    if (searchText)
+      filtered = filtered.filter(
+        (o) =>
+          o.name?.toLowerCase().includes(searchText.toLowerCase()) ||
+          o.email?.toLowerCase().includes(searchText.toLowerCase()) ||
+          o.id?.toString().includes(searchText)
+      );
+    setFilteredOrders(filtered);
+  }, [activeTab, searchText, orders]);
 
   const getStatusText = (status) => {
     switch (status) {
       case "PENDING":
-      case "PENDING_CONFIRM":
         return "Chờ xử lý";
-      case "PROCESSING":
-        return "Đang xử lý";
-      case "WAITING_APPROVAL":
-        return "Chờ xác thực";
+      case "CONFIRMED":
+        return "Đơn đã được nhận";
       case "COMPLETED":
         return "Hoàn thành";
-      case "REJECTED":
-        return "Từ chối";
-      case "KIT_SENT":
-        return "Đã gửi kit";
-      case "SAMPLE_RECEIVED":
-        return "Đã nhận mẫu";
-      case "CANCELLED":
-        return "Đã hủy";
       default:
-        if (status === "Chờ xử lý") return "Chờ xử lý";
-        if (status === "Đang xử lý") return "Đang xử lý";
-        if (status === "Hoàn thành") return "Hoàn thành";
-        if (status === "Chờ xác thực") return "Chờ xác thực";
-        if (status === "Từ chối") return "Từ chối";
-        if (status === "Đã gửi kit") return "Đã gửi kit";
-        if (status === "Đã nhận mẫu") return "Đã nhận mẫu";
-        if (status === "Đã hủy") return "Đã hủy";
         return status;
     }
   };
@@ -165,27 +221,11 @@ const OrderManagement = () => {
   const getStatusColor = (status) => {
     switch (status) {
       case "PENDING":
-      case "PENDING_CONFIRM":
-      case "Chờ xử lý":
-        return "orange";
-      case "PROCESSING":
-      case "Đang xử lý":
-        return "blue";
-      case "WAITING_APPROVAL":
-      case "Chờ xác thực":
-        return "purple";
+        return "#ffc107"; // vàng đậm
+      case "CONFIRMED":
+        return "#17a2b8"; // xanh cyan
       case "COMPLETED":
-      case "Hoàn thành":
-        return "green";
-      case "REJECTED":
-      case "Từ chối":
-        return "red";
-      case "KIT_SENT":
-        return "#2563EB";
-      case "SAMPLE_RECEIVED":
-        return "#22C55E";
-      case "CANCELLED":
-        return "#EF4444";
+        return "#28a745"; // xanh lá đậm
       default:
         return "default";
     }
@@ -195,113 +235,58 @@ const OrderManagement = () => {
     {
       title: "Mã đơn",
       dataIndex: "id",
-      key: "id",
-      width: 100,
       render: (id) => `#${id}`,
-      sorter: (a, b) => a.id - b.id,
     },
-    {
-      title: "Khách hàng",
-      dataIndex: "name",
-      key: "name",
-      width: 150,
-      sorter: (a, b) => a.name.localeCompare(b.name),
-    },
-    {
-      title: "Email",
-      dataIndex: "email",
-      key: "email",
-      width: 200,
-    },
-    {
-      title: "Số điện thoại",
-      dataIndex: "phone",
-      key: "phone",
-      width: 120,
-    },
-    {
-      title: "Loại xét nghiệm",
-      dataIndex: "type",
-      key: "type",
-      width: 180,
-    },
+    { title: "Khách hàng", dataIndex: "name" },
+
+    { title: "SĐT", dataIndex: "phone" },
+    { title: "Loại xét nghiệm", dataIndex: "type" },
     {
       title: "Phương thức lấy mẫu",
       dataIndex: "sampleMethod",
-      key: "sampleMethod",
-      width: 140,
-      render: (method) => (
-        <Tag color={method === "home" ? "blue" : "green"}>
-          {method === "home" ? "Tại nhà" : "Tại trung tâm"}
+      render: (m) => (
+        <Tag color={m === "home" ? "blue" : "green"}>
+          {m === "home" ? "Tại nhà" : "Tại trung tâm"}
         </Tag>
       ),
     },
     {
       title: "Trạng thái",
       dataIndex: "status",
-      key: "status",
-      width: 120,
       render: (status) => (
-        <Tag color={getStatusColor(status)}>{getStatusText(status)}</Tag>
+        <Tag color={getStatusColor(status)}>
+          {status === "PENDING" && "⏳ "}
+          {status === "CONFIRMED" && "🔄 "}
+          {status === "COMPLETED" && "✅ "}
+          {getStatusText(status)}
+        </Tag>
       ),
     },
     {
-      title: "Ngày tạo",
-      dataIndex: "date",
-      key: "date",
-      width: 120,
-      sorter: (a, b) =>
-        new Date(a.date.split("/").reverse().join("-")) -
-        new Date(b.date.split("/").reverse().join("-")),
-    },
-    {
       title: "Thao tác",
-      key: "action",
-      width: 200,
       render: (_, record) => (
-        <Space size="small">
+        <Space>
           <Button
             type="primary"
-            size="small"
             icon={<EyeOutlined />}
-            onClick={() => handleViewOrder(record)}
-            style={{ background: "#1890ff", color: "#fff" }}
+            onClick={() => {
+              setSelectedOrder(record);
+              setModalVisible(true);
+            }}
           >
-            Xem
+            Thông tin
           </Button>
-          <Button
-            type="default"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEditOrder(record)}
-          >
-            Sửa
-          </Button>
+          {record.status === "PENDING" && !record.isHidden && (
+            <Button onClick={() => handleAcceptOrder(record)}>Nhận đơn</Button>
+          )}
           {record.isHidden ? (
-            <Button
-              size="small"
-              type="primary"
-              onClick={() => handleUnhideOrder(record)}
-              style={{ background: "#52c41a", color: "#fff" }}
-            >
-              Hiện lại
-            </Button>
+            <Button onClick={() => handleUnhideOrder(record)}>Hiện lại</Button>
           ) : (
-            <Tooltip title="Ẩn đơn hàng khỏi giao diện nhân viên">
+            <Tooltip title="Ẩn đơn">
               <Button
-                icon={<EyeInvisibleOutlined style={{ color: "#595959" }} />}
-                onClick={() => handleDeleteOrder(record)}
-                size="small"
-                style={{
-                  marginLeft: 8,
-                  borderColor: "#bfbfbf",
-                  color: "#595959",
-                  background: "#f5f5f5",
-                  fontWeight: 600,
-                }}
-              >
-                Ẩn
-              </Button>
+                icon={<EyeInvisibleOutlined />}
+                onClick={() => setConfirmHideOrder(record)}
+              />
             </Tooltip>
           )}
         </Space>
@@ -310,39 +295,27 @@ const OrderManagement = () => {
   ];
 
   const stats = {
-    total: orders.filter((order) => !order.isHidden).length,
-    pending: orders.filter(
-      (order) => order.status === "Chờ xử lý" && !order.isHidden
-    ).length,
-    processing: orders.filter(
-      (order) => order.status === "Đang xử lý" && !order.isHidden
-    ).length,
-    completed: orders.filter(
-      (order) => order.status === "Hoàn thành" && !order.isHidden
-    ).length,
-    waitingApproval: orders.filter(
-      (order) => order.status === "Chờ xác thực" && !order.isHidden
-    ).length,
-    rejected: orders.filter(
-      (order) => order.status === "Từ chối" && !order.isHidden
-    ).length,
-    hidden: orders.filter((order) => order.isHidden).length,
+    total: orders.filter((o) => !o.isHidden).length,
+    pending: orders.filter((o) => o.status === "PENDING" && !o.isHidden).length,
+    processing: orders.filter((o) => o.status === "CONFIRMED" && !o.isHidden)
+      .length, // CHỖ NÀY
+    completed: orders.filter((o) => o.status === "COMPLETED" && !o.isHidden)
+      .length,
   };
 
   return (
-    <div style={{ padding: 24, background: "#f5f5f5", minHeight: "100%" }}>
+    <div style={{ padding: 24 }}>
       <div style={{ marginBottom: 24 }}>
         <h1
           style={{ fontSize: 28, fontWeight: 700, color: "#00a67e", margin: 0 }}
         >
-          Quản lý đơn hàng
+          Danh sách các đơn hàng
         </h1>
         <p style={{ color: "#666", margin: "8px 0 0 0", fontSize: 16 }}>
           Quản lý tất cả đơn hàng xét nghiệm ADN
         </p>
       </div>
 
-      {/* Thống kê tổng quan */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={6}>
           <Card>
@@ -384,74 +357,144 @@ const OrderManagement = () => {
       </Row>
 
       <Card>
-        <div
-          style={{
-            marginBottom: 16,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <Search
-              placeholder="Tìm kiếm theo tên, email hoặc mã đơn"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              style={{ width: 300 }}
-              allowClear
-            />
-          </div>
-          {/* Đã loại bỏ nút Xuất Excel và Tạo đơn mới */}
-        </div>
-
+        <Search
+          placeholder="Tìm kiếm..."
+          onChange={(e) => setSearchText(e.target.value)}
+          style={{ width: 300, marginBottom: 16 }}
+        />
         <Tabs activeKey={activeTab} onChange={setActiveTab}>
           <TabPane tab={`Tất cả (${stats.total})`} key="all" />
           <TabPane tab={`Chờ xử lý (${stats.pending})`} key="PENDING" />
-          <TabPane tab={`Đang xử lý (${stats.processing})`} key="PROCESSING" />
           <TabPane
-            tab={`Chờ xác thực (${stats.waitingApproval || 0})`}
-            key="WAITING_APPROVAL"
+            tab={`Đơn đã được nhận (${stats.processing})`}
+            key="CONFIRMED"
           />
           <TabPane tab={`Hoàn thành (${stats.completed})`} key="COMPLETED" />
-          <TabPane tab={`Từ chối (${stats.rejected || 0})`} key="REJECTED" />
-          <TabPane tab={`Đơn đã ẩn (${stats.hidden})`} key="hidden" />
         </Tabs>
-
         <Table
           columns={columns}
           dataSource={filteredOrders}
           rowKey="id"
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) =>
-              `${range[0]}-${range[1]} của ${total} đơn hàng`,
-          }}
           scroll={{ x: 1400 }}
         />
       </Card>
 
-      {/* Modal xem chi tiết đơn hàng */}
       <Modal
-        title={`Chi tiết đơn hàng #${selectedOrder?.id}`}
-        visible={modalVisible}
+        open={modalVisible}
+        title={
+          <Title level={3} style={{ color: "#059669", margin: 0 }}>
+            Chi tiết yêu cầu lấy mẫu #{selectedOrder?.id}
+          </Title>
+        }
         onCancel={() => setModalVisible(false)}
         footer={null}
+        width={700}
       >
-        {/* Modal content */}
+        <div>
+          <p>
+            <strong>Mã đơn:</strong> #{selectedOrder?.id}
+          </p>
+          <p>
+            <strong>Họ tên:</strong> {selectedOrder?.name}
+          </p>
+          <p>
+            <strong>Email:</strong> {selectedOrder?.email}
+          </p>
+          <p>
+            <strong>Số điện thoại:</strong> {selectedOrder?.phone}
+          </p>
+          <p>
+            <strong>CMND/CCCD:</strong> {selectedOrder?.identityNumber}
+          </p>
+          <p>
+            <strong>Địa chỉ:</strong> {selectedOrder?.address}
+          </p>
+          <p>
+            <strong>Loại dịch vụ:</strong> {selectedOrder?.type} (
+            {selectedOrder?.category})
+          </p>
+          <p>
+            <strong>Phương thức lấy mẫu:</strong>{" "}
+            {selectedOrder?.sampleMethod === "home"
+              ? "Tại nhà"
+              : "Tại trung tâm"}
+          </p>
+          <p>
+            <strong>Trạng thái:</strong> {getStatusText(selectedOrder?.status)}
+          </p>
+          <p>
+            <strong>Ngày tạo:</strong> {selectedOrder?.date}
+          </p>
+          {selectedOrder?.scheduledDate && (
+            <p>
+              <strong>Lịch hẹn:</strong> {selectedOrder?.scheduledDate}
+            </p>
+          )}
+          <div style={{ marginTop: 16 }}>
+            <strong style={{ fontSize: 16 }}>Thông tin mẫu:</strong>
+            {selectedOrder?.sampleInfo?.donors?.length > 0 ? (
+              <div style={{ marginTop: 12 }}>
+                {selectedOrder.sampleInfo.donors.map((donor, index) => (
+                  <div
+                    key={index}
+                    style={{
+                      background: "#fafafa",
+                      padding: "16px",
+                      borderRadius: 8,
+                      marginBottom: 16,
+                      border: "1px solid #eee",
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                    }}
+                  >
+                    <p style={{ marginBottom: 8 }}>
+                      <strong>👤 Họ tên:</strong> {donor.name}
+                    </p>
+                    <p style={{ marginBottom: 8 }}>
+                      <strong>⚥ Giới tính:</strong> {donor.gender} &nbsp;|&nbsp;{" "}
+                      <strong>🎂 Năm sinh:</strong> {donor.yob}
+                    </p>
+                    <p style={{ marginBottom: 0 }}>
+                      <strong>🔗 Quan hệ:</strong> {donor.relationship}{" "}
+                      &nbsp;|&nbsp; <strong>🧪 Loại mẫu:</strong>{" "}
+                      {donor.sampleType}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ marginTop: 8 }}>Không có thông tin mẫu</p>
+            )}
+          </div>
+        </div>
       </Modal>
+
+      {/* <Modal
+        open={acceptModalVisible}
+        title={`Nhận đơn #${acceptingOrder?.id}`}
+        onCancel={() => setAcceptModalVisible(false)}
+        onOk={() => form.submit()}
+        okText="Xác nhận"
+      >
+        <Form form={form} layout="vertical" onFinish={handleSubmitAcceptOrder}>
+          <Form.Item label="Mã kit" name="kitCode">
+            <Input disabled />
+          </Form.Item>
+          <Form.Item label="Ghi chú" name="notes">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+        </Form>
+      </Modal> */}
 
       <Modal
         open={!!confirmHideOrder}
         title={`Xác nhận ẩn đơn hàng #${confirmHideOrder?.id}`}
         onOk={handleConfirmHide}
-        onCancel={handleCancelHide}
+        onCancel={() => setConfirmHideOrder(null)}
         okText="Ẩn"
-        cancelText="Huỷ"
+        cancelText="Hủy"
         okButtonProps={{ danger: true }}
       >
-        Bạn có chắc chắn muốn ẩn thông tin đơn hàng này không?
+        Bạn có chắc muốn ẩn đơn hàng này không?
       </Modal>
     </div>
   );

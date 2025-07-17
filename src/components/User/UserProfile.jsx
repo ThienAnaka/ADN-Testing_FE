@@ -25,13 +25,8 @@ const sidebarTabs = [
 ];
 
 const UserProfile = () => {
-  const {
-    user,
-    updateUser,
-    requestPasswordChange,
-    verifyPasswordChange,
-    logout,
-  } = useContext(AuthContext);
+  const { user, updateUser, requestPasswordChange, logout } =
+    useContext(AuthContext);
   const { getAllOrders, addFeedback, updateOrder } = useOrderContext();
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -94,16 +89,16 @@ const UserProfile = () => {
   //fetch userProfile data:
   const fetchUserProfile = async () => {
     try {
-      const response = await userApi.getUserProfileByProfileId(user.userId);
+      const response = await userApi.getUserProfileByGmail(user.email);
       console.log(response.data);
       if (response?.data) {
         const dobRaw = response.data.profileDto?.dateOfBirth || "";
         const dobFormatted = dobRaw ? dobRaw.split("T")[0] : ""; // cắt thành YYYY-MM-DD
 
         setForm({
-          fullName: response.data.fullName || "",
-          email: response.data.email || "",
-          phone: response.data.phoneNumber || "",
+          fullName: user.fullName || "",
+          email: user.email || "",
+          phone: response.data.data.phoneNumber || "",
           address: response.data.profileDto?.address || "",
           birthDate: dobFormatted,
           gender: response.data.profileDto?.gender || "Nam",
@@ -173,31 +168,36 @@ const UserProfile = () => {
     setPwForm({ ...pwForm, [e.target.name]: e.target.value });
   };
   const handleChangePassword = async (e) => {
-  e.preventDefault();
-  setPwMsg("");
+    e.preventDefault();
+    setPwMsg("");
 
-  if (!pwForm.current || !pwForm.new || !pwForm.confirm) {
-    setPwMsg("Vui lòng nhập đầy đủ thông tin!");
-    return;
-  }
+    if (!pwForm.current || !pwForm.new || !pwForm.confirm) {
+      setPwMsg("Vui lòng nhập đầy đủ thông tin!");
+      return;
+    }
 
-  if (pwForm.new !== pwForm.confirm) {
-    setPwMsg("Mật khẩu mới và xác nhận không khớp!");
-    return;
-  }
+    if (pwForm.new !== pwForm.confirm) {
+      setPwMsg("Mật khẩu mới và xác nhận không khớp!");
+      // console.log(pwMsg)
+      return;
+    }
 
-  if (pwForm.new.length < 6) {
-    setPwMsg("Mật khẩu mới phải từ 6 ký tự!");
-    return;
-  }
-
-  await requestPasswordChange(pwForm.current, pwForm.new);
-  // if (res.success) {
-  //   setPwMsg("Đổi mật khẩu thành công! Đang đăng xuất...");
-  // } else {
-  //   setPwMsg(res.message);
-  // }
-};
+    if (pwForm.new.length < 6) {
+      setPwMsg("Mật khẩu mới phải từ 6 ký tự!");
+      return;
+    }
+    // console.log('call api')
+    const response = await requestPasswordChange(pwForm.current, pwForm.new);
+    
+    if (response?.success) {
+      setPwMsg(response.message); // Hiện thông báo thành công
+      setTimeout(() => {
+        logout(); // Đăng xuất sau 2 giây
+      }, 2000);
+    } else {
+      setPwMsg(response?.message || "Đổi mật khẩu thất bại.");
+    }
+  };
 
   // const handleVerifyOtp = (e) => {
   //   e.preventDefault();

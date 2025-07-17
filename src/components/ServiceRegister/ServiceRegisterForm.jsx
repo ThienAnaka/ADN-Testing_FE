@@ -1,11 +1,36 @@
 import { useState, useContext, useEffect } from "react";
-import { useOrderContext } from "../../context/OrderContext";
+// import { useOrderContext } from "../../context/OrderContext";
 import { AuthContext } from "../../context/AuthContext";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import serviceApi from "../../api/serviceApi";
-import vnpayApi from "../../api/vnpayApi";
 import userApi from "../../api/userApI";
+import { useServiceContext } from "../../context/ServiceContext";
+import vnpayApi from "../../api/vnpayApi";
+
+// const serviceOptions = {
+//   Voluntary: [
+//     { value: "civil-paternity", label: "Xét nghiệm ADN dân sự - Cha con" },
+//     { value: "civil-maternity", label: "Xét nghiệm ADN dân sự - Mẹ con" },
+//     { value: "civil-siblings", label: "Xét nghiệm ADN dân sự - Anh chị em" },
+//     { value: "civil-relatives", label: "Xét nghiệm ADN dân sự - Họ hàng" },
+//     { value: "civil-ancestry", label: "Xét nghiệm ADN dân sự - Nguồn gốc" },
+//     {
+//       value: "civil-health",
+//       label: "Xét nghiệm ADN dân sự - Sức khỏe di truyền",
+//     },
+//     { value: "civil-express", label: "Xét nghiệm ADN dân sự - Nhanh" },
+//   ],
+//   Administrative: [
+//     { value: "admin-birth", label: "Xét nghiệm ADN hành chính - Khai sinh" },
+//     { value: "admin-immigration", label: "Xét nghiệm ADN hành chính - Di trú" },
+//     {
+//       value: "admin-inheritance",
+//       label: "Xét nghiệm ADN hành chính - Thừa kế",
+//     },
+//     { value: "admin-dispute", label: "Xét nghiệm ADN hành chính - Tranh chấp" },
+//     { value: "admin-express", label: "Xét nghiệm ADN hành chính - Nhanh" },
+//   ],
+// };
 
 const sampleMethodOptions = {
   Voluntary: [
@@ -19,8 +44,9 @@ const sampleMethodOptions = {
 };
 
 const ServiceRegisterForm = () => {
-  const { addOrder } = useOrderContext();
+  // const { addOrder } = useOrderContext();
   const { user } = useContext(AuthContext);
+  // const { pricingData } = useOrderContext();
   const [category, setCategory] = useState("Voluntary");
   const [serviceType, setServiceType] = useState("");
   const [sampleMethod, setSampleMethod] = useState("");
@@ -28,21 +54,45 @@ const ServiceRegisterForm = () => {
   const [agreed, setAgreed] = useState(false);
   const [readGuide, setReadGuide] = useState(false);
   const [appointmentDate, setAppointmentDate] = useState(null);
+  const [numPeople, setNumPeople] = useState(2);
+  const [price, setPrice] = useState(0);
   const [memberTable, setMemberTable] = useState([
     { name: "", birth: "", gender: "Nam", relation: "", sampleType: "" },
     { name: "", birth: "", gender: "Nam", relation: "", sampleType: "" },
   ]);
-  const [services, setServices] = useState([]);
-
-  const fetchServices = async () => {
-    try {
-      const response = await serviceApi.getServices();
-      console.log(response.data);
-      setServices(response.data);
-    } catch (error) {
-      console.error("Error fetching service:", error);
+  const services = useServiceContext();
+  // Mapping from serviceType value to keyword to match pricing name
+  useEffect(() => {
+    if (!serviceType) {
+      setPrice(0);
+      return;
     }
-  };
+
+    const selectedService = services.find(
+      (s) => String(s.id) === String(serviceType)
+    );
+
+    if (!selectedService) {
+      setPrice(0);
+      return;
+    }
+
+    let peopleCount = 0;
+    if (sampleMethod === "At Center") {
+      peopleCount = numPeople;
+    } else if (sampleMethod === "At Home") {
+      peopleCount = memberTable.length;
+    }
+    if (peopleCount < 2) peopleCount = 2;
+
+    const base = selectedService.price2Samples || 0;
+    const extra =
+      peopleCount > 2
+        ? (peopleCount - 2) * (selectedService.price3Samples || 0)
+        : 0;
+
+    setPrice(base + extra);
+  }, [serviceType, numPeople, sampleMethod, memberTable, services]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -56,6 +106,7 @@ const ServiceRegisterForm = () => {
       alert("Bạn cần xác nhận cam kết pháp lý và tự nguyện để tiếp tục.");
       return;
     }
+
     const form = e.target;
     const selectedService = services.find(
       (service) => String(service.id) == String(serviceType)
@@ -65,82 +116,85 @@ const ServiceRegisterForm = () => {
       alert("Dịch vụ không hợp lệ. Vui lòng chọn lại.");
       return;
     }
+
     const sampleCount = memberTable.length;
     let price = 0;
     if (sampleCount === 2) {
       price = selectedService.price2Samples;
     } else if (sampleCount > 2) {
-      price =
-        selectedService.price2Samples +
-        selectedService.price3Samples * (sampleCount - 2);
+      price = selectedService.price2Samples + selectedService.price3Samples;
     }
 
-    const paymentData = {
-      requestId: `8`,
-      orderType: "other",
-      amount: price,
-      orderDescription: "Thanh toán dịch vụ ADN",
-      name: user ? user.fullName : form.fullName.value,
+    // 1. Gửi đơn hàng đến BE
+    // console.log( appointmentDate.toISOString().slice(0, 10))
+    const submitPayload = {
+      testRequest: {
+        userId: user?.userId || null,
+        serviceId: Number(serviceType),
+        typeId: sampleMethod === "At Home" ? 1 : 2,
+        category: category,
+        scheduleDate: appointmentDate
+          ? appointmentDate.toISOString().slice(0, 10)
+          : null,
+        address: form.address.value,
+        status: "Pending",
+      },
+      declarant: {
+        fullName: form.fullName.value,
+        gender: form.gender?.value || "Nam",
+        address: form.address.value,
+        identityNumber: form.cccd.value,
+        identityIssuedDate: null,
+        identityIssuedPlace: "",
+        phone: form.phone.value,
+        email: form.email.value,
+      },
+      samples: memberTable.map((m) => ({
+        ownerName: m.name || "",
+        gender: m.gender || "",
+        relationship: m.relation || "",
+        sampleType: m.sampleType || "",
+        yob: Number(m.birth) || 0,
+      })),
     };
-    console.log(paymentData);
+    console.log("form submit: ", submitPayload);
     try {
-      const paymentRes = await vnpayApi.paymentRequest(paymentData);
-
-      if (
-        paymentRes.data &&
-        paymentRes.data.status === "true" &&
-        paymentRes.data.paymentUrl
-      ) {
-        window.location.href = paymentRes.data.paymentUrl;
+      const response = await userApi.submitFormRequest(submitPayload); // POST /user/submit
+      if (response.status != 200) throw new Error("Không thể tạo đơn hàng");
+      const requestId = response.data?.requestId;
+      console.log(requestId);
+      if (!requestId) {
+        alert("Không thể tạo đơn hàng. Vui lòng thử lại.");
         return;
       }
 
-      console.error("Unexpected payment response:", paymentRes.data);
-      alert("❌ Không tạo được liên kết thanh toán. Vui lòng thử lại.");
+      // 2. Gọi API tạo link VNPAY
+      const paymentData = {
+        requestId: requestId,
+        orderType: "other",
+        amount: price,
+        orderDescription: "Thanh toán dịch vụ ADN",
+        name: form.fullName.value || user?.fullName || "",
+      };
+      // console.log(paymentData)
+      const paymentRes = await vnpayApi.paymentRequest(paymentData); // POST /Payment/create-vnpay-url
+      // await console.log("asdasdasd",  paymentRes)
+      if (paymentRes.status === 200 && paymentRes.data.paymentUrl) {
+        window.location.href = paymentRes.data.paymentUrl;
+      } else {
+        alert("❌ Không tạo được liên kết thanh toán. Vui lòng thử lại.");
+      }
     } catch (error) {
-      console.error("Payment request failed:", error);
-      alert("🚫 Lỗi kết nối hệ thống thanh toán. Vui lòng thử lại.");
+      console.error("Lỗi gửi đơn hàng hoặc thanh toán:", error);
+      alert("🚫 Có lỗi xảy ra. Vui lòng thử lại.");
+    } finally {
+      form.reset();
+      setAgreed(false);
+      setShowToast(true);
+      setReadGuide(false);
+      setTimeout(() => setShowToast(false), 2500);
     }
   };
-
-  // const handleSubmit = (e) => {
-  //   e.preventDefault();
-  //   if (category === "civil" && sampleMethod === "home" && !readGuide) {
-  //     alert("Bạn cần xác nhận đã đọc và hiểu quy trình tự thu mẫu tại nhà.");
-  //     return;
-  //   }
-  //   if (!agreed) {
-  //     alert("Bạn cần xác nhận cam kết pháp lý và tự nguyện để tiếp tục.");
-  //     return;
-  //   }
-  //   const form = e.target;
-  //   const newOrder = {
-  //     id: "DNA" + Date.now(),
-  //     type: form.serviceType.options[form.serviceType.selectedIndex].text,
-  //     date: new Date().toLocaleDateString("vi-VN"),
-  //     price: 0,
-  //     status: form.sampleMethod.value === "home" ? "PENDING_CONFIRM" : "Chờ xử lý",
-  //     name: user ? user.fullName || user.name : form.fullName.value,
-  //     phone: form.phone.value,
-  //     email: user ? user.email : form.email.value,
-  //     address: form.address.value,
-  //     appointmentDate: appointmentDate
-  //       ? appointmentDate.toLocaleDateString("vi-VN")
-  //       : "",
-  //     category: form.category.value,
-  //     sampleMethod: form.sampleMethod.value,
-  //     note: form.message.value,
-  //     userId: user ? user.user_id : null,
-  //     idNumber: form.cccd.value,
-  //     members: memberTable.filter((m) => Object.values(m).some((v) => v)),
-  //   };
-  //   addOrder(newOrder);
-  //   form.reset();
-  //   setAgreed(false);
-  //   setShowToast(true);
-  //   setReadGuide(false);
-  //   setTimeout(() => setShowToast(false), 2500);
-  // };
 
   const handleMemberChange = (idx, field, value) => {
     setMemberTable((prev) =>
@@ -162,10 +216,6 @@ const ServiceRegisterForm = () => {
       setMemberTable((prev) => prev.filter((_, i) => i !== idx));
     }
   };
-
-  useEffect(() => {
-    fetchServices();
-  }, []);
 
   return (
     <section className="service-registration" id="registration">
@@ -308,7 +358,7 @@ const ServiceRegisterForm = () => {
                 id="address"
                 name="address"
                 placeholder="Càng chi tiết càng tốt"
-                defaultValue={user && user.address ? user.address : ""}
+                defaultValue={""}
               />
             </div>
           </div>
@@ -341,8 +391,8 @@ const ServiceRegisterForm = () => {
               >
                 <option value="">Chọn loại dịch vụ</option>
                 {services
-                  ?.filter((option) => option.category == category)
-                  ?.map((opt) => (
+                  .filter((service) => service.category == category)
+                  .map((opt) => (
                     <option key={opt.id} value={opt.id}>
                       {opt.serviceName}
                     </option>
@@ -368,7 +418,7 @@ const ServiceRegisterForm = () => {
                   flexWrap: "nowrap",
                 }}
               >
-                {sampleMethodOptions[category]?.map((opt) => (
+                {sampleMethodOptions[category].map((opt) => (
                   <label
                     key={opt.value}
                     style={{
@@ -393,7 +443,43 @@ const ServiceRegisterForm = () => {
                 ))}
               </div>
             </div>
+            {/* Số người xét nghiệm (chỉ khi tại trung tâm) */}
+            {sampleMethod === "At Center" && (
+              <div className="form-group" style={{ marginTop: 16 }}>
+                <label htmlFor="numPeople">Số người xét nghiệm</label>
+                <p style={{ color: "red" }}>
+                  **Lưu ý: Chọn chính xác số người xét nghiệm
+                </p>
+                <select
+                  id="numPeople"
+                  name="numPeople"
+                  value={numPeople}
+                  onChange={(e) => setNumPeople(Number(e.target.value))}
+                  required
+                >
+                  <option value={2}>2 người</option>
+                  <option value={3}>3 người</option>
+                </select>
+              </div>
+            )}
           </div>
+          {price > 0 && (
+            <div
+              style={{
+                background: "#f0fffa",
+                border: "1px solid #b7eb8f",
+                borderRadius: 8,
+                padding: 16,
+                margin: "16px 0",
+                fontWeight: 600,
+                color: "#389e0d",
+                fontSize: 18,
+              }}
+            >
+              Số tiền cần thanh toán:{" "}
+              {new Intl.NumberFormat("vi-VN").format(price)} VNĐ
+            </div>
+          )}
           <div className="form-row">
             <div className="form-group" style={{ flex: 1 }}>
               <label htmlFor="cccd">Số CCCD</label>
@@ -405,12 +491,26 @@ const ServiceRegisterForm = () => {
               />
             </div>
             <div className="form-group" style={{ flex: 1 }}>
-              <label htmlFor="appointmentDate">Ngày cấp CCCD</label>
+              <label htmlFor="appointmentDate">Ngày hẹn xét nghiệm</label>
               <DatePicker
                 selected={appointmentDate}
                 onChange={(date) => setAppointmentDate(date)}
-                minDate={new Date()}
-                filterDate={(date) => date.getDay() !== 0}
+                minDate={(() => {
+                  const d = new Date();
+                  d.setDate(d.getDate() + 2); // Bắt đầu từ ngày thứ 3 kể từ hôm nay
+                  return d;
+                })()}
+                maxDate={(() => {
+                  const d = new Date();
+                  d.setMonth(d.getMonth() + 2); // Giới hạn tối đa trong 2 tháng tới
+                  return d;
+                })()}
+                filterDate={(date) => {
+                  const today = new Date();
+                  const threeDaysLater = new Date();
+                  threeDaysLater.setDate(today.getDate() + 3);
+                  return date >= threeDaysLater;
+                }}
                 dateFormat="dd/MM/yyyy"
                 placeholderText="Chọn ngày"
                 id="appointmentDate"
@@ -420,194 +520,198 @@ const ServiceRegisterForm = () => {
               />
             </div>
           </div>
-          {/* Bảng thông tin thành viên cung cấp mẫu */}
-          <>
-            <div
-              style={{
-                margin: "18px 0 10px 0",
-                fontWeight: 600,
-                color: "#009e74",
-                textAlign: "left",
-              }}
-            >
-              Bảng thông tin thành viên cung cấp mẫu:
-            </div>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                marginBottom: 18,
-              }}
-            >
-              <thead>
-                <tr style={{ background: "#f6f8fa" }}>
-                  <th style={{ border: "1px solid #ccc", padding: 6 }}>STT</th>
-                  <th style={{ border: "1px solid #ccc", padding: 6 }}>
-                    Họ và tên
-                  </th>
-                  <th style={{ border: "1px solid #ccc", padding: 6 }}>
-                    Năm sinh
-                  </th>
-                  <th style={{ border: "1px solid #ccc", padding: 6 }}>
-                    Giới tính
-                  </th>
-                  <th style={{ border: "1px solid #ccc", padding: 6 }}>
-                    Mối quan hệ
-                  </th>
-                  <th style={{ border: "1px solid #ccc", padding: 6 }}>
-                    Loại mẫu
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {memberTable.map((row, i) => (
-                  <tr key={i}>
-                    <td style={{ border: "1px solid #ccc", padding: 6 }}>
-                      {i + 1}
-                    </td>
-                    <td style={{ border: "1px solid #ccc", padding: 6 }}>
-                      <input
-                        style={{
-                          width: "100%",
-                          border: "1px solid #bbb",
-                          borderRadius: 6,
-                          padding: 8,
-                          fontSize: 16,
-                        }}
-                        value={row.name}
-                        onChange={(e) =>
-                          handleMemberChange(i, "name", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td style={{ border: "1px solid #ccc", padding: 6 }}>
-                      <input
-                        style={{
-                          width: "100%",
-                          border: "1px solid #bbb",
-                          borderRadius: 6,
-                          padding: 8,
-                          fontSize: 16,
-                        }}
-                        value={row.birth}
-                        onChange={(e) =>
-                          handleMemberChange(i, "birth", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td style={{ border: "1px solid #ccc", padding: 6 }}>
-                      <select
-                        style={{
-                          width: "100%",
-                          border: "1px solid #bbb",
-                          borderRadius: 6,
-                          padding: 8,
-                          fontSize: 16,
-                        }}
-                        value={row.gender}
-                        onChange={(e) =>
-                          handleMemberChange(i, "gender", e.target.value)
-                        }
-                      >
-                        <option>Nam</option>
-                        <option>Nữ</option>
-                      </select>
-                    </td>
-                    <td style={{ border: "1px solid #ccc", padding: 6 }}>
-                      <input
-                        style={{
-                          width: "100%",
-                          border: "1px solid #bbb",
-                          borderRadius: 6,
-                          padding: 8,
-                          fontSize: 16,
-                        }}
-                        value={row.relation}
-                        onChange={(e) =>
-                          handleMemberChange(i, "relation", e.target.value)
-                        }
-                      />
-                    </td>
-                    <td
-                      style={{
-                        border: "1px solid #ccc",
-                        padding: 6,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      }}
-                    >
-                      <select
-                        style={{
-                          width: "100%",
-                          border: "1px solid #bbb",
-                          borderRadius: 6,
-                          padding: 8,
-                          fontSize: 16,
-                        }}
-                        value={row.sampleType}
-                        onChange={(e) =>
-                          handleMemberChange(i, "sampleType", e.target.value)
-                        }
-                      >
-                        <option value="">Chọn loại mẫu</option>
-                        <option value="Nước bọt">Nước bọt</option>
-                        <option value="Máu">Máu</option>
-                        <option value="Tóc">Tóc</option>
-                        <option value="Móng">Móng</option>
-                        <option value="Niêm mạc">Niêm mạc</option>
-                      </select>
-                      {memberTable.length > 2 && i >= 2 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveMember(i)}
-                          style={{
-                            marginLeft: 4,
-                            background: "#e74c3c",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: 4,
-                            padding: "4px 10px",
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            fontSize: 14,
-                          }}
-                        >
-                          Xóa
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {memberTable.length < 3 && (
-              <div style={{ textAlign: "right", marginBottom: 18 }}>
-                <button
-                  type="button"
-                  onClick={handleAddMember}
-                  style={{
-                    background: "#009e74",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: 6,
-                    padding: "8px 18px",
-                    fontWeight: 600,
-                    fontSize: 15,
-                    cursor: "pointer",
-                  }}
-                >
-                  + Thêm người
-                </button>
+          {/* Bảng thông tin thành viên cung cấp mẫu (chỉ hiện khi tự thu tại nhà) */}
+          {category === "Voluntary" && sampleMethod === "At Home" && (
+            <>
+              <div
+                style={{
+                  margin: "18px 0 10px 0",
+                  fontWeight: 600,
+                  color: "#009e74",
+                  textAlign: "left",
+                }}
+              >
+                Bảng thông tin thành viên cung cấp mẫu:
               </div>
-            )}
-          </>
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  marginBottom: 18,
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#f6f8fa" }}>
+                    <th style={{ border: "1px solid #ccc", padding: 6 }}>
+                      STT
+                    </th>
+                    <th style={{ border: "1px solid #ccc", padding: 6 }}>
+                      Họ và tên
+                    </th>
+                    <th style={{ border: "1px solid #ccc", padding: 6 }}>
+                      Năm sinh
+                    </th>
+                    <th style={{ border: "1px solid #ccc", padding: 6 }}>
+                      Giới tính
+                    </th>
+                    <th style={{ border: "1px solid #ccc", padding: 6 }}>
+                      Mối quan hệ
+                    </th>
+                    <th style={{ border: "1px solid #ccc", padding: 6 }}>
+                      Loại mẫu
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {memberTable.map((row, i) => (
+                    <tr key={i}>
+                      <td style={{ border: "1px solid #ccc", padding: 6 }}>
+                        {i + 1}
+                      </td>
+                      <td style={{ border: "1px solid #ccc", padding: 6 }}>
+                        <input
+                          style={{
+                            width: "100%",
+                            border: "1px solid #bbb",
+                            borderRadius: 6,
+                            padding: 8,
+                            fontSize: 16,
+                          }}
+                          value={row.name}
+                          onChange={(e) =>
+                            handleMemberChange(i, "name", e.target.value)
+                          }
+                        />
+                      </td>
+                      <td style={{ border: "1px solid #ccc", padding: 6 }}>
+                        <input
+                          style={{
+                            width: "100%",
+                            border: "1px solid #bbb",
+                            borderRadius: 6,
+                            padding: 8,
+                            fontSize: 16,
+                          }}
+                          value={row.birth}
+                          onChange={(e) =>
+                            handleMemberChange(i, "birth", e.target.value)
+                          }
+                        />
+                      </td>
+                      <td style={{ border: "1px solid #ccc", padding: 6 }}>
+                        <select
+                          style={{
+                            width: "100%",
+                            border: "1px solid #bbb",
+                            borderRadius: 6,
+                            padding: 8,
+                            fontSize: 16,
+                          }}
+                          value={row.gender}
+                          onChange={(e) =>
+                            handleMemberChange(i, "gender", e.target.value)
+                          }
+                        >
+                          <option>Nam</option>
+                          <option>Nữ</option>
+                        </select>
+                      </td>
+                      <td style={{ border: "1px solid #ccc", padding: 6 }}>
+                        <input
+                          style={{
+                            width: "100%",
+                            border: "1px solid #bbb",
+                            borderRadius: 6,
+                            padding: 8,
+                            fontSize: 16,
+                          }}
+                          value={row.relation}
+                          onChange={(e) =>
+                            handleMemberChange(i, "relation", e.target.value)
+                          }
+                        />
+                      </td>
+                      <td
+                        style={{
+                          border: "1px solid #ccc",
+                          padding: 6,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <select
+                          style={{
+                            width: "100%",
+                            border: "1px solid #bbb",
+                            borderRadius: 6,
+                            padding: 8,
+                            fontSize: 16,
+                          }}
+                          value={row.sampleType}
+                          onChange={(e) =>
+                            handleMemberChange(i, "sampleType", e.target.value)
+                          }
+                        >
+                          <option value="">Chọn loại mẫu</option>
+                          <option value="Nước bọt">Nước bọt</option>
+                          <option value="Máu">Máu</option>
+                          <option value="Tóc">Tóc</option>
+                          <option value="Móng">Móng</option>
+                          <option value="Niêm mạc">Niêm mạc</option>
+                        </select>
+                        {memberTable.length > 2 && i >= 2 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveMember(i)}
+                            style={{
+                              marginLeft: 4,
+                              background: "#e74c3c",
+                              color: "#fff",
+                              border: "none",
+                              borderRadius: 4,
+                              padding: "4px 10px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              fontSize: 14,
+                            }}
+                          >
+                            Xóa
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {memberTable.length < 3 && (
+                <div style={{ textAlign: "right", marginBottom: 18 }}>
+                  <button
+                    type="button"
+                    onClick={handleAddMember}
+                    style={{
+                      background: "#009e74",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 6,
+                      padding: "8px 18px",
+                      fontWeight: 600,
+                      fontSize: 15,
+                      cursor: "pointer",
+                    }}
+                  >
+                    + Thêm người
+                  </button>
+                </div>
+              )}
+            </>
+          )}
           <div className="form-group">
             <label htmlFor="message">Ghi chú thêm</label>
             <textarea id="message" name="message" rows="4"></textarea>
           </div>
           {/* Hướng dẫn tự thu mẫu tại nhà */}
-          {category === "civil" && sampleMethod === "home" && (
+          {category === "Voluntary" && sampleMethod === "At Home" && (
             <div
               style={{
                 background: "#f6f8fa",

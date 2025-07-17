@@ -1,94 +1,88 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useContext } from "react";
 import {
   Card,
   Table,
   Tag,
   Button,
   Modal,
-  Form,
-  Input,
-  Select,
   message,
   Space,
   Badge,
 } from "antd";
 import {
   EyeOutlined,
-  MessageOutlined,
-  PhoneOutlined,
-  MailOutlined,
   ClockCircleOutlined,
 } from "@ant-design/icons";
-
-const { TextArea } = Input;
-const { Option } = Select;
+import staffApi from "../../api/staffApi";
+import { AuthContext } from "../../context/AuthContext";
+import { useServiceContext } from "../../context/ServiceContext";
 
 const ConsultationRequests = () => {
   const [consultations, setConsultations] = useState([]);
   const [selectedConsultation, setSelectedConsultation] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [replyModalVisible, setReplyModalVisible] = useState(false);
-  const [form] = Form.useForm();
+  const { user } = useContext(AuthContext);
+  const services = useServiceContext();
 
-  // Hàm tải yêu cầu tư vấn từ localStorage (nếu không có thì để trống)
-  const loadConsultations = useCallback(() => {
-    const consultationsKey = "dna_consultations";
-    const saved = JSON.parse(localStorage.getItem(consultationsKey) || "[]");
-    let list = Array.isArray(saved) ? saved : [];
-    // Lọc bỏ các bản ghi mẫu cũ (id nhỏ hơn 1e12 hoặc có email "@gmail.com" như dữ liệu demo)
-    const cleaned = list.filter((c) => Number(c.id) > 1e12);
-    if (cleaned.length !== list.length) {
-      // Cập nhật localStorage nếu có thay đổi
-      localStorage.setItem(consultationsKey, JSON.stringify(cleaned));
+  const getServiceName = (id) => {
+    const s = services.find((x) => x.id == id);
+    return s ? s.serviceName : `Dịch vụ #${id}`;
+  };
+
+  const fetchConsultations = async () => {
+    try {
+      const res = await staffApi.getConsultRequest();
+      if (res.status !== 200) throw new Error("Lỗi khi gọi API");
+
+      const mapped = res.data.map((item) => ({
+        id: item.consultId,
+        customerName: item.fullName,
+        phone: item.phone,
+        category: item.category,
+        serviceId: item.serviceId,
+        message: item.message,
+        createdAt: new Date(item.createdAt).toLocaleString("vi-VN"),
+        status: item.status === "completed" ? "Đã phản hồi" : "Chờ phản hồi",
+        reply: item.reply,
+        repliedAt: item.repliedAt
+          ? new Date(item.repliedAt).toLocaleString("vi-VN")
+          : null,
+      }));
+
+      setConsultations(mapped);
+    } catch (err) {
+      console.error("Lỗi khi gọi API tư vấn:", err);
     }
-    setConsultations(cleaned);
-  }, []);
+  };
 
-  // Tải dữ liệu khi component mount và khi localStorage thay đổi (từ tab khác)
   useEffect(() => {
-    loadConsultations();
-
-    const handleStorage = (e) => {
-      if (e.key === "dna_consultations") {
-        loadConsultations();
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, [loadConsultations]);
+    fetchConsultations();
+  }, []);
 
   const handleViewConsultation = (consultation) => {
     setSelectedConsultation(consultation);
     setModalVisible(true);
   };
 
-  const handleReply = (consultation) => {
-    setSelectedConsultation(consultation);
-    form.resetFields();
-    setReplyModalVisible(true);
-  };
-
-  const handleSendReply = async (values) => {
+  const handleMarkCompleted = async (consultation) => {
     try {
-      const updatedConsultations = consultations.map((consultation) =>
-        consultation.id === selectedConsultation.id
-          ? {
-            ...consultation,
-            status: "Đã phản hồi",
-            reply: values.reply,
-            repliedAt: new Date().toLocaleString("vi-VN"),
-          }
-          : consultation
-      );
-      // Cập nhật state và localStorage
-      setConsultations(updatedConsultations);
-      localStorage.setItem("dna_consultations", JSON.stringify(updatedConsultations));
-      setReplyModalVisible(false);
-      message.success("Gửi phản hồi thành công!");
-    } catch {
-      message.error("Có lỗi xảy ra khi gửi phản hồi!");
+      const data = {
+        consultId: consultation.id,
+        status: "completed",
+        staffId: user?.userId,
+        repliedAt: new Date().toISOString(),
+      };
+
+      const res = await staffApi.handleConsultRequest(data);
+      if (res.status !== 200) throw new Error("Gửi phản hồi thất bại!");
+
+      message.success("Đánh dấu hoàn thành thành công!");
+      fetchConsultations();
+    } catch (err) {
+      console.error("Gửi phản hồi thất bại:", err);
+      message.error("Gửi phản hồi thất bại!");
     }
   };
 
@@ -107,10 +101,11 @@ const ConsultationRequests = () => {
       width: 150,
     },
     {
-      title: "Chủ đề",
-      dataIndex: "subject",
-      key: "subject",
+      title: "Dịch vụ",
+      dataIndex: "serviceId",
+      key: "serviceId",
       width: 200,
+      render: (id) => getServiceName(id),
     },
     {
       title: "Trạng thái",
@@ -118,10 +113,12 @@ const ConsultationRequests = () => {
       key: "status",
       width: 120,
       render: (status) => {
-        let color = "default";
-        if (status === "Chờ phản hồi") color = "orange";
-        if (status === "Đang xử lý") color = "blue";
-        if (status === "Đã phản hồi") color = "green";
+        const color =
+          status === "Chờ phản hồi"
+            ? "orange"
+            : status === "Đang xử lý"
+            ? "blue"
+            : "green";
         return <Tag color={color}>{status}</Tag>;
       },
     },
@@ -140,7 +137,7 @@ const ConsultationRequests = () => {
     {
       title: "Thao tác",
       key: "action",
-      width: 200,
+      width: 180,
       render: (_, record) => (
         <Space size="small">
           <Button
@@ -148,28 +145,12 @@ const ConsultationRequests = () => {
             size="small"
             icon={<EyeOutlined />}
             onClick={() => handleViewConsultation(record)}
-            style={{
-              background: "#1890ff",
-              color: "#fff",
-              borderRadius: 6,
-              border: "none",
-              fontWeight: 600,
-              boxShadow: "0 2px 8px rgba(24,144,255,0.08)",
-              transition: "background 0.2s",
-            }}
-            onMouseOver={(e) => (e.currentTarget.style.background = "#1765ad")}
-            onMouseOut={(e) => (e.currentTarget.style.background = "#1890ff")}
           >
             Xem
           </Button>
           {record.status !== "Đã phản hồi" && (
-            <Button
-              type="default"
-              size="small"
-              icon={<MessageOutlined />}
-              onClick={() => handleReply(record)}
-            >
-              Phản hồi
+            <Button size="small" onClick={() => handleMarkCompleted(record)}>
+              Xác nhận đã hoàn thành
             </Button>
           )}
         </Space>
@@ -184,14 +165,12 @@ const ConsultationRequests = () => {
   return (
     <div style={{ padding: 24, background: "#f5f5f5", minHeight: "100%" }}>
       <div style={{ marginBottom: 24 }}>
-        <h1
-          style={{ fontSize: 28, fontWeight: 700, color: "#00a67e", margin: 0 }}
-        >
+        <h1 style={{ fontSize: 28, fontWeight: 700, color: "#00a67e" }}>
           Yêu cầu tư vấn
           <Badge count={pendingCount} style={{ marginLeft: 16 }} />
         </h1>
-        <p style={{ color: "#666", margin: "8px 0 0 0", fontSize: 16 }}>
-          Quản lý và phản hồi các yêu cầu tư vấn từ khách hàng
+        <p style={{ color: "#666", fontSize: 16 }}>
+          Quản lý và đánh dấu hoàn thành các yêu cầu tư vấn
         </p>
       </div>
 
@@ -211,7 +190,6 @@ const ConsultationRequests = () => {
         />
       </Card>
 
-      {/* Modal xem chi tiết */}
       <Modal
         title={`Chi tiết yêu cầu tư vấn #${selectedConsultation?.id}`}
         open={modalVisible}
@@ -220,85 +198,35 @@ const ConsultationRequests = () => {
           <Button key="close" onClick={() => setModalVisible(false)}>
             Đóng
           </Button>,
-          selectedConsultation?.status !== "Đã phản hồi" && (
-            <Button
-              key="reply"
-              type="primary"
-              icon={<MessageOutlined />}
-              onClick={() => {
-                setModalVisible(false);
-                handleReply(selectedConsultation);
-              }}
-            >
-              Phản hồi
-            </Button>
-          ),
         ]}
         width={800}
       >
         {selectedConsultation && (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <h3>Thông tin khách hàng:</h3>
-              <p>
-                <strong>Họ tên:</strong> {selectedConsultation.customerName}
-              </p>
-              <p>
-                <strong>Email:</strong>
-                <Button
-                  type="link"
-                  icon={<MailOutlined />}
-                  style={{ padding: 0, marginLeft: 8 }}
-                >
-                  {selectedConsultation.email}
-                </Button>
-              </p>
-              <p>
-                <strong>Số điện thoại:</strong>
-                <Button
-                  type="link"
-                  icon={<PhoneOutlined />}
-                  style={{ padding: 0, marginLeft: 8 }}
-                >
-                  {selectedConsultation.phone}
-                </Button>
-              </p>
-              <p>
-                <strong>Danh mục:</strong>{" "}
-                <Tag color="blue">{selectedConsultation.category}</Tag>
-              </p>
-              <p>
-                <strong>Độ ưu tiên:</strong>{" "}
-                <Tag
-                  color={
-                    selectedConsultation.priority === "Cao"
-                      ? "red"
-                      : selectedConsultation.priority === "Trung bình"
-                        ? "orange"
-                        : "green"
-                  }
-                >
-                  {selectedConsultation.priority}
-                </Tag>
-              </p>
+          <>
+            <h3>Thông tin khách hàng:</h3>
+            <p>
+              <strong>Họ tên:</strong> {selectedConsultation.customerName}
+            </p>
+            <p>
+              <strong>SĐT:</strong> {selectedConsultation.phone}
+            </p>
+            <p>
+              <strong>Danh mục:</strong> {selectedConsultation.category}
+            </p>
+            <h3>Dịch vụ:</h3>
+            <p>{getServiceName(selectedConsultation.serviceId)}</p>
+            <h3>Nội dung:</h3>
+            <div
+              style={{
+                background: "#f6f6f6",
+                padding: 16,
+                borderRadius: 6,
+              }}
+            >
+              {selectedConsultation.message}
             </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <h3>Chủ đề:</h3>
-              <p>{selectedConsultation.subject}</p>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <h3>Nội dung:</h3>
-              <div
-                style={{ background: "#f6f6f6", padding: 16, borderRadius: 6 }}
-              >
-                {selectedConsultation.message}
-              </div>
-            </div>
-
             {selectedConsultation.reply && (
-              <div>
+              <>
                 <h3>Phản hồi:</h3>
                 <div
                   style={{
@@ -310,64 +238,13 @@ const ConsultationRequests = () => {
                 >
                   {selectedConsultation.reply}
                 </div>
-                <p style={{ color: "#666", fontSize: 12, marginTop: 8 }}>
+                <p style={{ fontSize: 12, color: "#666" }}>
                   Phản hồi lúc: {selectedConsultation.repliedAt}
                 </p>
-              </div>
+              </>
             )}
-          </div>
+          </>
         )}
-      </Modal>
-
-      {/* Modal phản hồi */}
-      <Modal
-        title={`Phản hồi yêu cầu tư vấn #${selectedConsultation?.id}`}
-        open={replyModalVisible}
-        onCancel={() => setReplyModalVisible(false)}
-        onOk={() => form.submit()}
-        okText="Gửi phản hồi"
-        cancelText="Hủy"
-        width={800}
-        okButtonProps={{
-          style: {
-            background: "#1890ff",
-            color: "#fff",
-            borderRadius: 6,
-            border: "none",
-            fontWeight: 600,
-            boxShadow: "0 2px 8px rgba(24,144,255,0.08)",
-            transition: "background 0.2s",
-          },
-          onMouseOver: (e) => (e.target.style.background = "#1765ad"),
-          onMouseOut: (e) => (e.target.style.background = "#1890ff"),
-        }}
-      >
-        <Form form={form} layout="vertical" onFinish={handleSendReply}>
-          <div
-            style={{
-              marginBottom: 16,
-              background: "#f6f6f6",
-              padding: 16,
-              borderRadius: 6,
-            }}
-          >
-            <h4>Câu hỏi của khách hàng:</h4>
-            <p>{selectedConsultation?.message}</p>
-          </div>
-
-          <Form.Item
-            name="reply"
-            label="Nội dung phản hồi"
-            rules={[
-              { required: true, message: "Vui lòng nhập nội dung phản hồi!" },
-            ]}
-          >
-            <TextArea
-              rows={8}
-              placeholder="Nhập nội dung phản hồi chi tiết cho khách hàng..."
-            />
-          </Form.Item>
-        </Form>
       </Modal>
     </div>
   );

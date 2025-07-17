@@ -20,7 +20,7 @@ const UserManagement = () => {
       // Lọc roleId === 1 (user thường)
       setUsers(response.data.filter((u) => u.roleId === 1));
     } catch (error) {
-       console.log(error)
+      console.log(error);
       message.error("Không thể tải danh sách người dùng");
       setUsers([]);
     }
@@ -48,16 +48,18 @@ const UserManagement = () => {
     { title: "Email", dataIndex: "email", key: "email" },
     { title: "Số điện thoại", dataIndex: "phone", key: "phone" },
     {
-      title: '',
+      title: <div className="text-center">Thao tác</div>,
       key: "action",
+      align: "center", // ✅ Căn giữa nội dung trong cột
       render: (_, record) => (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex",  justifyContent: "center"  }}>
           <Button
             type="link"
             onClick={() => {
               setSelectedUser(record);
               setModalOpen(true);
             }}
+            style={{ fontWeight: 500 }}
           >
             Xem chi tiết
           </Button>
@@ -126,11 +128,22 @@ const UserManagement = () => {
       >
         {selectedUser && (
           <div style={{ lineHeight: 2 }}>
-            <div><b>ID:</b> {selectedUser.userId}</div>
-            <div><b>Họ tên:</b> {selectedUser.fullName}</div>
-            <div><b>Email:</b> {selectedUser.email}</div>
-            <div><b>Số điện thoại:</b> {selectedUser.phone}</div>
-            <div><b>Ngày tạo:</b> {new Date(selectedUser.createdAt).toLocaleString()}</div>
+            <div>
+              <b>ID:</b> {selectedUser.userId}
+            </div>
+            <div>
+              <b>Họ tên:</b> {selectedUser.fullName}
+            </div>
+            <div>
+              <b>Email:</b> {selectedUser.email}
+            </div>
+            <div>
+              <b>Số điện thoại:</b> {selectedUser.phone}
+            </div>
+            <div>
+              <b>Ngày tạo:</b>{" "}
+              {new Date(selectedUser.createdAt).toLocaleString()}
+            </div>
           </div>
         )}
       </Modal>

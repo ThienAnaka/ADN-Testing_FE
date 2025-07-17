@@ -39,20 +39,12 @@ const menuItems = [
     label: "Tổng quan",
   },
   {
-    key: "testing-results",
-    icon: <ExperimentOutlined />,
-    label: "Xét nghiệm & Kết quả",
+    key: "order-management",
+    icon: <FileTextOutlined />,
+    label: "Danh sách các đơn hàng",
   },
-  {
-    key: "consultation",
-    icon: <CustomerServiceOutlined />,
-    label: "Yêu cầu tư vấn",
-  },
-  {
-    key: "feedback",
-    icon: <MessageOutlined />,
-    label: "Phản hồi khách hàng",
-  },
+  
+  
   {
     key: "home-sampling",
     icon: <HomeOutlined />,
@@ -62,6 +54,11 @@ const menuItems = [
     key: "center-sampling",
     icon: <BankOutlined />,
     label: "Thu mẫu tại cơ sở",
+  },
+  {
+    key: "testing-results",
+    icon: <ExperimentOutlined />,
+    label: "Xét nghiệm & Kết quả",
   },
   {
     key: "sample-collection",
@@ -74,9 +71,14 @@ const menuItems = [
     label: "Lấy mẫu dân sự",
   },
   {
-    key: "order-management",
-    icon: <FileTextOutlined />,
-    label: "Quản lý đơn hàng",
+    key: "consultation",
+    icon: <CustomerServiceOutlined />,
+    label: "Yêu cầu tư vấn",
+  },
+  {
+    key: "feedback",
+    icon: <MessageOutlined />,
+    label: "Xem phản hồi khách hàng",
   },
 ];
 

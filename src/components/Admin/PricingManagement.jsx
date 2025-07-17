@@ -23,6 +23,8 @@ const PricingManagement = () => {
   const [editingService, setEditingService] = useState(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [form] = Form.useForm();
+  const [searchKeyword, setSearchKeyword] = useState("");
+
   const [categorizedServices, setCategorizedServices] = useState({
     Voluntary: [],
     Administrative: [],
@@ -42,11 +44,23 @@ const PricingManagement = () => {
           Voluntary: voluntary,
           Administrative: administrative,
         });
+        console.log(categorizedServices);
       }
     } catch (error) {
       console.error("Error fetching services:", error);
       message.error("Không thể tải dữ liệu dịch vụ. Vui lòng thử lại sau.");
     }
+  };
+
+  const getFilteredServices = (services) => {
+    return services.filter((s) => {
+      const keyword = searchKeyword.toLowerCase();
+      return (
+        s.serviceName?.toLowerCase().includes(keyword) ||
+        s.description?.toLowerCase().includes(keyword) ||
+        s.slug?.toLowerCase().includes(keyword)
+      );
+    });
   };
 
   useEffect(() => {
@@ -72,24 +86,39 @@ const PricingManagement = () => {
     setIsModalVisible(true);
   };
 
-  const handleDelete = async (id) => {
-    Modal.confirm({
-      title: "Bạn có chắc chắn muốn xóa dịch vụ này?",
-      okText: "Xóa",
-      okType: "danger",
-      cancelText: "Hủy",
-      onOk: async () => {
-        try {
-          await adminApi.deleteServiceById(id);
-          message.success("Xóa dịch vụ thành công!");
-          fetchServices();
-        } catch (error) {
-          console.error("Lỗi khi xóa dịch vụ:", error);
-          message.error("Không thể xóa dịch vụ. Vui lòng thử lại sau.");
-        }
-      },
-    });
-  };
+  //  const handleDelete = async (id) => {
+  //   const service = [...categorizedServices.Voluntary, ...categorizedServices.Administrative].find(
+  //     (s) => s.id === id
+  //   );
+
+  //   Modal.confirm({
+  //     title: "Xác nhận xóa",
+  //     content: (
+  //       <>
+  //         Bạn có chắc chắn muốn xóa dịch vụ:{" "}
+  //         <strong>{service?.serviceName || "Không rõ tên"}</strong>?
+  //       </>
+  //     ),
+  //     okText: "Xóa",
+  //     okType: "danger",
+  //     cancelText: "Hủy",
+  //     centered: true,
+  //     onOk: async () => {
+  //       try {
+  //         const response = await adminApi.deleteServiceById(id);
+  //         if (response.status === 200) {
+  //           message.success("Xóa dịch vụ thành công!");
+  //           fetchServices(); // làm mới danh sách
+  //         } else {
+  //           throw new Error("Xóa thất bại");
+  //         }
+  //       } catch (error) {
+  //         console.error("Lỗi khi xóa dịch vụ:", error);
+  //         message.error("Không thể xóa dịch vụ. Vui lòng thử lại sau.");
+  //       }
+  //     },
+  //   });
+  // };
 
   const handleSave = async () => {
     try {
@@ -103,7 +132,7 @@ const PricingManagement = () => {
         category: values.category,
         numberSample: editingService.numberSample, // 👈 giữ nguyên
         isUrgent: editingService.isUrgent, // 👈 giữ nguyên
-        isPublished: editingService.isPublished, // 👈 giữ nguyên
+        isPublished: values.isPublished ?? false,
         price2Samples: values.price2Samples ?? 0,
         price3Samples: values.price3Samples,
         timeToResult: values.timeToResult,
@@ -156,6 +185,14 @@ const PricingManagement = () => {
       key: "timeToResult",
     },
     {
+      title: "Công khai",
+      dataIndex: "isPublished",
+      key: "isPublished",
+      align: "center",
+      render: (value) => (value ? "✅ Có" : "❌ Không"),
+    },
+
+    {
       title: "Thao tác",
       key: "action",
       render: (_, record) => (
@@ -169,9 +206,9 @@ const PricingManagement = () => {
           >
             Sửa
           </Button>
-          <Button danger onClick={() => handleDelete(record.id)}>
+          {/* <Button danger onClick={() => handleDelete(record.id)}>
             Xóa
-          </Button>
+          </Button> */}
         </div>
       ),
     },
@@ -182,19 +219,35 @@ const PricingManagement = () => {
       <h2 style={{ marginBottom: 24, fontSize: 24, fontWeight: 700 }}>
         Quản lý thời gian & chi phí
       </h2>
+      <div
+        style={{
+          marginBottom: 16,
+          display: "flex",
+          justifyContent: "flex-end",
+        }}
+      >
+        <Input
+          placeholder="Tìm kiếm dịch vụ..."
+          value={searchKeyword}
+          onChange={(e) => setSearchKeyword(e.target.value)}
+          style={{ width: 300 }}
+        />
+      </div>
+
       <Tabs activeKey={activeTab} onChange={setActiveTab}>
         <TabPane tab="Xét nghiệm ADN dân sự" key="Voluntary">
           <Table
             columns={columns}
-            dataSource={categorizedServices.Voluntary}
+            dataSource={getFilteredServices(categorizedServices.Voluntary)}
             rowKey="id"
             pagination={false}
           />
         </TabPane>
+
         <TabPane tab="Xét nghiệm ADN hành chính" key="Administrative">
           <Table
             columns={columns}
-            dataSource={categorizedServices.Administrative}
+            dataSource={getFilteredServices(categorizedServices.Administrative)}
             rowKey="id"
             pagination={false}
           />
@@ -317,6 +370,14 @@ const PricingManagement = () => {
             ]}
           >
             <Input placeholder="Ví dụ: 3-5 ngày" />
+          </Form.Item>
+
+          <Form.Item
+            name="isPublished"
+            label="Công khai dịch vụ"
+            valuePropName="checked"
+          >
+            <Switch />
           </Form.Item>
 
           <Form.Item

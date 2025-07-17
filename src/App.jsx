@@ -18,21 +18,24 @@ import ContactPage from "./components/Contact/ContactPage";
 import UserProfile from "./components/User/UserProfile";
 import StaffOrderManager from "./components/Staff/StaffOrderManager";
 import AdminDashboard from "./components/Admin/AdminDashboard";
-import Error404 from './components/Errors/Error404';
-import LoginPage from './components/HomePage/LoginPage';
-import RegisterPage from './components/HomePage/RegisterPage';
+import Error404 from "./components/Errors/Error404";
+import LoginPage from "./components/HomePage/LoginPage";
+import RegisterPage from "./components/HomePage/RegisterPage";
 import ManagerDashboard from "./components/Manager/ManagerDashboard";
-import ServiceRegister from './components/ServiceRegister/ServiceRegister';
+import ServiceRegister from "./components/ServiceRegister/ServiceRegister";
+import { ServiceContext } from "./context/ServiceContext";
+
 /*-----------------------------------------------------*/
 import "./Css/Services-page.css";
 import "./Css/About-us-page.css";
 import "./Css/Blog.css";
 import "./Css/Contact.css";
 /*-----------------------------------------------------*/
-import { useContext } from "react";
+import { useContext, useEffect, useState } from "react";
 import { AuthContext } from "./context/AuthContext";
 import { useLocation } from "react-router-dom";
-
+import PaymentSuccessPage from "./components/ServiceRegister/paymentSuccess";
+import serviceApi from "./api/serviceApi";
 
 const blogData = [
   {
@@ -73,7 +76,6 @@ const blogData = [
   },
 ];
 
-
 function HomePage() {
   return (
     <>
@@ -85,7 +87,6 @@ function HomePage() {
       <RegistrationForm />
       <FAQContact />
     </>
-
   );
 }
 
@@ -174,12 +175,39 @@ function App() {
   const isManagerPage = location.pathname.startsWith("/manager");
   const isAdmin = user && user.role_id === 4;
   const isManager = user && user.role_id === 3;
-  const is404 = location.pathname === '/404' || location.pathname === '*' || location.pathname.startsWith('/404');
-  const isLoginOrRegister = location.pathname === '/login' || location.pathname === '/register';
+  const is404 =
+    location.pathname === "/404" ||
+    location.pathname === "*" ||
+    location.pathname.startsWith("/404");
+  const isLoginOrRegister =
+    location.pathname === "/login" || location.pathname === "/register";
+  const [services, setServices] = useState([]);
+
+  useEffect(() => {
+    const fetchServices = async () => {
+      try {
+        const res = await serviceApi.getServices();
+        // console.log('context service: ', res)
+        setServices(res.data);
+      } catch (err) {
+        console.error("Lỗi khi fetch services:", err);
+      }
+    };
+    fetchServices();
+  }, []);
+
   return (
+    <ServiceContext.Provider value={services}>
     <div className="app" style={isUserPage ? { paddingTop: 56 } : {}}>
-      {isUserPage && !is404 && !isLoginOrRegister && <UserInfoBar user={user} />}
-      {!(isAdmin && isAdminPage) && !(isManager && isManagerPage) && !isUserPage && !isStaffPage && !is404 && !isLoginOrRegister && <Header />}
+      {isUserPage && !is404 && !isLoginOrRegister && (
+        <UserInfoBar user={user} />
+      )}
+      {!(isAdmin && isAdminPage) &&
+        !(isManager && isManagerPage) &&
+        !isUserPage &&
+        !isStaffPage &&
+        !is404 &&
+        !isLoginOrRegister && <Header />}
       <main>
         <Routes>
           <Route path="/" element={<HomePage />} />
@@ -189,7 +217,9 @@ function App() {
           <Route path="/taikhoan" element={<UserProfile />} />
           <Route path="/nhanvien" element={<StaffOrderManager />} />
           <Route path="/manager" element={<ManagerDashboard />} />
+          <Route path="/payment-success" element={<PaymentSuccessPage />} />
           <Route path="/tintuc" element={<BlogPage blogData={blogData} />} />
+
           <Route
             path="/tintuc/:id"
             element={<BlogDetailPage blogData={blogData} />}
@@ -198,12 +228,19 @@ function App() {
           <Route path="/admin/*" element={<AdminDashboard />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path='*' element={<Error404 />} />
+          <Route path="*" element={<Error404 />} />
         </Routes>
       </main>
-      {!(isAdmin && isAdminPage) && !(isManager && isManagerPage) && !isUserPage && !isStaffPage && !is404 && !isLoginOrRegister && <Footer />}
-      {!is404 && !isLoginOrRegister && !isStaffPage && !isManagerPage && <ScrollToTop />}
-    </div>
+      {!(isAdmin && isAdminPage) &&
+        !(isManager && isManagerPage) &&
+        !isUserPage &&
+        !isStaffPage &&
+        !is404 &&
+        !isLoginOrRegister && <Footer />}
+      {!is404 && !isLoginOrRegister && !isStaffPage && !isManagerPage && (
+        <ScrollToTop />
+      )}
+    </div></ServiceContext.Provider>
   );
 }
 export default App;

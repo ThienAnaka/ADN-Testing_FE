@@ -14,7 +14,7 @@ import serviceApi from "../../api/serviceApi";
 import blogApi from "../../api/blogApi";
 
 const ServicesPage = () => {
-  const [activeTab, setActiveTab] = useState("civil");
+  const [activeTab, setActiveTab] = useState("Voluntary");
   const location = useLocation();
   const [services, setServices] = useState([]);
   const [blogs, setBlogs] = useState([]);
@@ -23,7 +23,7 @@ const ServicesPage = () => {
   const fetchBlogs = async () => {
     try {
       const response = await blogApi.getBlogs();
-      console.log(response);
+      // console.log(response);
       setBlogs(response.data);
     } catch (err) {
       console.error("Failed to fetch blogs:", err);
@@ -51,9 +51,9 @@ const ServicesPage = () => {
         el.scrollIntoView({ behavior: "smooth" });
       }
       // Nếu là dịch vụ hành chính thì tự động chuyển tab
-      if (id === "hanh-chinh") setActiveTab("administrative");
+      if (id === "hanh-chinh") setActiveTab("Administrative");
       if (["huyet-thong", "nguon-goc", "suc-khoe"].includes(id))
-        setActiveTab("civil");
+        setActiveTab("Voluntary");
     } else if (location.state && location.state.scrollToPricing) {
       const section = document.querySelector(".pricing-section");
       if (section) {
@@ -94,23 +94,23 @@ const ServicesPage = () => {
               <div className="tabs-header">
                 <button
                   className={`tab-button ${
-                    activeTab === "civil" ? "active" : ""
+                    activeTab === "Voluntary" ? "active" : ""
                   }`}
-                  onClick={() => handleTabChange("civil")}
+                  onClick={() => handleTabChange("Voluntary")}
                 >
                   Xét nghiệm ADN dân sự
                 </button>
                 <button
                   className={`tab-button ${
-                    activeTab === "administrative" ? "active" : ""
+                    activeTab === "Administrative" ? "active" : ""
                   }`}
-                  onClick={() => handleTabChange("administrative")}
+                  onClick={() => handleTabChange("Administrative")}
                 >
                   Xét nghiệm ADN hành chính
                 </button>
               </div>
               <div className="tabs-content">
-                {activeTab === "civil" && (
+                {activeTab === "Voluntary" && (
                   <div className="tab-panel">
                     <div className="service-description">
                       <h3>Xét nghiệm ADN dân sự là gì?</h3>
@@ -165,7 +165,7 @@ const ServicesPage = () => {
                     </div>
                   </div>
                 )}
-                {activeTab === "administrative" && (
+                {activeTab === "Administrative" && (
                   <div className="tab-panel">
                     <div className="service-description" id="hanh-chinh">
                       <h3>Xét nghiệm ADN hành chính là gì?</h3>

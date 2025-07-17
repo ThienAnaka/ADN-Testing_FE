@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { Table, Modal, Button, message } from "antd";
-import axios from "axios";
 import { PlusOutlined, EditOutlined } from "@ant-design/icons";
 import adminApi from "../../api/adminApi";
 
@@ -19,10 +18,10 @@ const StaffManagement = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [addModal, setAddModal] = useState(false);
   const [addForm, setAddForm] = useState({
-    name: "",
+    fullName: "",
     email: "",
     phone: "",
-    role_id: 2,
+    roleId: 2,
   });
   const [addPw, setAddPw] = useState("");
   const [addLoading, setAddLoading] = useState(false);
@@ -460,123 +459,149 @@ const StaffManagement = () => {
         )}
       </Modal>
       <Modal
-        open={addModal}
-        onCancel={() => setAddModal(false)}
-        footer={null} // <- Gỡ onOk, để tự xử lý nút submit
-        title="Tạo tài khoản nhân viên/quản lý"
+  open={addModal}
+  onCancel={() => setAddModal(false)}
+  footer={null}
+  title="Tạo tài khoản nhân viên/quản lý"
+>
+  <form
+    onSubmit={(e) => {
+      e.preventDefault();
+      const form = e.target;
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+      handleAddSubmit();
+    }}
+    style={{ display: "flex", flexDirection: "column", gap: 12 }}
+  >
+    {/* Họ tên */}
+    <label>
+      Họ tên:
+      <input
+        placeholder="Nhập họ tên"
+        value={addForm.fullName || ""}
+        onChange={(e) =>
+          setAddForm((f) => ({ ...f, fullName: e.target.value }))
+        }
+        style={{ padding: 8, borderRadius: 6, border: "1px solid #ccc", width: "100%" }}
+        required
+      />
+    </label>
+
+    {/* Email */}
+    <label>
+      Email:
+      <input
+        placeholder="Nhập địa chỉ email"
+        value={addForm.email}
+        onChange={(e) =>
+          setAddForm((f) => ({ ...f, email: e.target.value }))
+        }
+        style={{ padding: 8, borderRadius: 6, border: "1px solid #ccc", width: "100%" }}
+        type="email"
+        required
+        onInvalid={(e) =>
+          e.target.setCustomValidity("Vui lòng nhập đúng định dạng email (có ký tự @).")
+        }
+        onInput={(e) => e.target.setCustomValidity("")}
+      />
+    </label>
+
+    {/* Số điện thoại */}
+    <label>
+      Số điện thoại:
+      <input
+        placeholder="Nhập số điện thoại"
+        value={addForm.phone || ""}
+        onChange={(e) =>
+          setAddForm((f) => ({ ...f, phone: e.target.value }))
+        }
+        style={{ padding: 8, borderRadius: 6, border: "1px solid #ccc", width: "100%" }}
+        type="tel"
+        pattern="[0-9]{10,11}"
+        required
+        onInvalid={(e) =>
+          e.target.setCustomValidity("Vui lòng nhập đúng định dạng số điện thoại (10-11 số).")
+        }
+        onInput={(e) => e.target.setCustomValidity("")}
+      />
+    </label>
+
+    {/* Vai trò */}
+    <label>
+      Vai trò:
+      <select
+        value={addForm.roleId}
+        onChange={(e) =>
+          setAddForm((f) => ({ ...f, roleId: Number(e.target.value) }))
+        }
+        style={{ padding: 8, borderRadius: 6, border: "1px solid #ccc", width: "100%" }}
+        required
       >
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const form = e.target;
-            if (!form.checkValidity()) {
-              form.reportValidity(); // Show lỗi mặc định trình duyệt
-              return;
-            }
-            handleAddSubmit(); // Gửi API nếu hợp lệ
-          }}
-          style={{ display: "flex", flexDirection: "column", gap: 12 }}
-        >
-          <input
-            placeholder="Họ tên"
-            value={addForm.fullName || ""}
-            onChange={(e) =>
-              setAddForm((f) => ({ ...f, fullName: e.target.value }))
-            }
-            style={{ padding: 8, borderRadius: 6, border: "1px solid #ccc" }}
-            required
-          />
-          <input
-            placeholder="Email"
-            value={addForm.email}
-            onChange={(e) =>
-              setAddForm((f) => ({ ...f, email: e.target.value }))
-            }
-            style={{ padding: 8, borderRadius: 6, border: "1px solid #ccc" }}
-            type="email"
-            required
-          />
-          <input
-            placeholder="Số điện thoại"
-            value={addForm.phone || ""}
-            onChange={(e) =>
-              setAddForm((f) => ({ ...f, phone: e.target.value }))
-            }
-            style={{ padding: 8, borderRadius: 6, border: "1px solid #ccc" }}
-            type="tel"
-            pattern="[0-9]{10,11}"
-            required
-            onInvalid={(e) =>
-              e.target.setCustomValidity(
-                "Vui lòng nhập đúng định dạng số điện thoại (10-11 số)"
-              )
-            }
-            onInput={(e) => e.target.setCustomValidity("")}
-          />
+        <option value={2}>Nhân viên (Staff)</option>
+        <option value={3}>Quản lý (Manager)</option>
+      </select>
+    </label>
 
-          <select
-            value={addForm.roleId}
-            onChange={(e) =>
-              setAddForm((f) => ({ ...f, roleId: Number(e.target.value) }))
-            }
-            style={{ padding: 8, borderRadius: 6, border: "1px solid #ccc" }}
-            required
-          >
-            <option value={2}>Nhân viên (Staff)</option>
-            <option value={3}>Quản lý (Manager)</option>
-          </select>
-          <div>
-            <b>Mật khẩu tự sinh:</b>{" "}
-            <span
-              style={{
-                background: "#f5f5f5",
-                padding: "2px 8px",
-                borderRadius: 4,
-              }}
-            >
-              {addPw}
-            </span>
-          </div>
-          {addError && <div style={{ color: "red" }}>{addError}</div>}
+    {/* Mật khẩu tự sinh */}
+    <div>
+      <b>Mật khẩu tự sinh:</b>{" "}
+      <span
+        style={{
+          background: "#f5f5f5",
+          padding: "2px 8px",
+          borderRadius: 4,
+        }}
+      >
+        {addPw}
+      </span>
+    </div>
 
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 8,
-              marginTop: 12,
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setAddModal(false)}
-              style={{
-                padding: "6px 16px",
-                borderRadius: 6,
-                border: "1px solid #ccc",
-                background: "#fff",
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              style={{
-                background: "#1677ff",
-                color: "#fff",
-                padding: "6px 16px",
-                border: "none",
-                borderRadius: 6,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Tạo mới
-            </button>
-          </div>
-        </form>
-      </Modal>
+    {/* Thông báo lỗi */}
+    {addError && <div style={{ color: "red" }}>{addError}</div>}
+
+    {/* Nút thao tác */}
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        gap: 8,
+        marginTop: 12,
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setAddModal(false)}
+        style={{
+          padding: "6px 16px",
+          borderRadius: 6,
+          border: "1px solid #ccc",
+          background: "#fff",
+          cursor: "pointer",
+        }}
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        style={{
+          background: "#1677ff",
+          color: "#fff",
+          padding: "6px 16px",
+          border: "none",
+          borderRadius: 6,
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+      >
+        Tạo mới
+      </button>
+    </div>
+  </form>
+</Modal>
+
 
       <Modal
         open={editModal}

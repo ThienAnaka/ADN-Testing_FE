@@ -22,11 +22,11 @@ import PricingManagement from "./PricingManagement";
 const { Sider, Content } = Layout;
 
 const menuItems = [
-  {
-    key: "test-types",
-    icon: <AppstoreOutlined />,
-    label: "DashBoard",
-  },
+  // {
+  //   key: "test-types",
+  //   icon: <AppstoreOutlined />,
+  //   label: "DashBoard",
+  // },
   {
     key: "processing",
     icon: <FileProtectOutlined />,
