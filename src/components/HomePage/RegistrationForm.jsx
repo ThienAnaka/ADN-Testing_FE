@@ -275,7 +275,7 @@ const RegistrationForm = () => {
                   >
                     <option value="">Chọn loại dịch vụ</option>
                     {services
-                      ?.filter((option) => option.category == category)
+                      ?.filter((option) => (option.category == category) === 1)
                       ?.map((opt) => (
                         <option key={opt.id} value={opt.id}>
                           {opt.serviceName}
